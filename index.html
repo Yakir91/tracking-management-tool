@@ -637,8 +637,8 @@ function initMap(){
   fitField();mapNote(null);renderMapTools();
 }
 function renderMapTools(){const el=$('#maptools');if(!el)return;const m=state.map;let h='';
-  if(drawMode==='field')h+=`<button class="btn pri" data-act="field-done" type="button">סיים שטח${drawPts.length>2?` · ${Math.round(polyArea(drawPts)/1000)} דונם`:` (${drawPts.length} נקודות)`}</button><button class="btn" data-act="field-cancel" type="button">בטל</button>`;
-  else if(drawMode==='path')h+=`<button class="btn pri" data-act="path-done" type="button">סיים שביל (${drawPts.length})</button><button class="btn" data-act="field-cancel" type="button">בטל</button>`;
+  if(drawMode==='field')h+=`<button class="btn pri" data-act="field-done" type="button">סיים שטח${drawPts.length>2?` · ${Math.round(polyArea(drawPts)/1000)} דונם`:` (${drawPts.length} נקודות)`}</button>${drawPts.length?`<button class="btn" data-act="undo-pt" type="button">בטל נקודה אחרונה</button>`:''}<button class="btn" data-act="field-cancel" type="button">בטל</button>`;
+  else if(drawMode==='path')h+=`<button class="btn pri" data-act="path-done" type="button">סיים שביל (${drawPts.length})</button>${drawPts.length?`<button class="btn" data-act="undo-pt" type="button">בטל נקודה אחרונה</button>`:''}<button class="btn" data-act="field-cancel" type="button">בטל</button>`;
   else if(drawMode==='base')h+=`<span class="btn">לחצו על נקודת הכינוס</span>`;
   else{if(m.mode==='satellite')h+=`<div class="seg"><button type="button" data-act="layer" data-v="sat" aria-pressed="${state.ui.layer!=='street'}">תצלום אוויר</button><button type="button" data-act="layer" data-v="street" aria-pressed="${state.ui.layer==='street'}">מפה</button></div>`;
     else if(tilesOK)h+=`<button class="btn pri" data-act="mode" data-v="satellite" type="button">עבור למפה אמיתית</button>`;}
@@ -759,7 +759,7 @@ function renderPanel(){
     if(m.mode==='schematic')h+=`<p class="note">רשת של 50 מ׳ ללא רקע, לתכנון לפני שבחרתם שטח.</p>`;
     if(m.mode==='image')h+=`<p class="note">העלו צילום מסך של השטח מ-govmap או Google Earth, ואז כיילו קנה מידה לפי שתי נקודות שהמרחק ביניהן ידוע.</p><input type="file" id="img-in" accept="image/*"><div class="row"><button class="btn sm" data-act="calib" type="button" ${m.image?'':'disabled'}>כיול קנה מידה</button>${m.image?`<span class="note mono">${m.image.scale.toFixed(3)} מ׳ לפיקסל</span>`:''}</div>${calibPts.length===2?`<div class="row"><label class="fld">המרחק האמיתי בין שתי הנקודות (מ׳)<input type="number" id="calib-d" min="1" step="1" value="100"></label><button class="btn pri sm" data-act="calib-ok" type="button">החל</button><button class="btn sm" data-act="calib-cancel" type="button">בטל</button></div>`:''}${drawMode==='calib'?'<p class="note">לחצו על שתי נקודות במפה.</p>':''}`;
     if(m.mode==='satellite')h+=`<h4>חיפוש מקום</h4><div class="row"><input id="q-in" placeholder="למשל: מושב בית חלקיה, או 31.84, 34.80" style="flex:1 1 180px"><button class="btn sm" data-act="search" type="button">חפש</button><button class="btn sm" data-act="myloc" type="button">המיקום שלי</button></div><div id="q-res" class="row"></div><p class="note">מצאו את המקום, סמנו את גבולות השטח שבחרתם ואת שביל הגישה, והמסלולים יוצבו בתוכו לפי קנה המידה האמיתי.</p>`;
-    h+=`</div><div class="box"><h4>1. שטח המסלולים</h4><div class="row"><button class="btn" data-act="field-draw" type="button">סמן שטח</button><button class="btn" data-act="base" type="button">קבע נקודת כינוס</button></div>
+    h+=`</div><div class="box"><h4>1. שטח המסלולים</h4><div class="row"><button class="btn" data-act="field-draw" type="button">${m.field&&m.field.length>2?'סמן שטח מחדש':'סמן שטח'}</button>${m.field&&m.field.length>2?'<button class="btn" data-act="field-clear" type="button">מחק שטח</button>':''}<button class="btn" data-act="base" type="button">קבע נקודת כינוס</button></div>
       <p class="note">לחצו על פינות השטח לפי הסדר; אורך כל צלע מוצג על המפה. לחיצה כפולה או "סיים" מסיימת. אחר כך אפשר לגרור כל פינה, והמסלולים מוצבים מחדש.</p>
       ${fitBox(M,area)}</div>
       <div class="box"><h4>2. שביל גישה</h4><div class="row"><button class="btn" data-act="path-draw" type="button">סמן שביל גישה</button>${m.path&&m.path.length?'<button class="btn sm" data-act="path-clear" type="button">חזור לשביל אוטומטי</button>':''}</div>
@@ -897,6 +897,9 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-act
     case 'mode':if(state.map.mode!==el.dataset.v){const prev=state.map.mode;state.map.mode=el.dataset.v;const fresh=confirmSwap(prev);save();initMap();if(fresh)regen();else recompute();if(el.dataset.v==='satellite'){state.ui.tab='field';renderTabs();renderPanel();}}break;
     case 'move-here':{const c=map.getCenter();anchorAt([c.lat,c.lng]);save();recompute();fitField();toast('השטח והמסלולים הוזזו לכאן בקנה מידה אמיתי. כדי להתאים לשטח האמיתי, סמנו את גבולות השטח מחדש.');break;}
     case 'field-draw':drawMode='field';drawPts=[];renderPanel();renderMap(lastM);renderMapTools();break;
+    case 'undo-pt':drawPts.pop();renderMap(lastM);renderMapTools();break;
+    case 'field-clear':if(el.dataset.armed){const m=state.map;m.field=[];m.path=[];state.geo={};state.trackNo={};state.lastGen=null;state.ui.sel=null;if(m.layouts)delete m.layouts[m.mode];save();recompute();toast('השטח נמחק. לחצו "סמן שטח" כדי לסמן שטח חדש.');}
+      else{el.dataset.armed='1';el.textContent='לחצו שוב כדי למחוק';el.classList.add('pri');setTimeout(()=>{if(el.isConnected){delete el.dataset.armed;el.textContent='מחק שטח';el.classList.remove('pri');}},4000);}break;
     case 'path-draw':drawMode='path';drawPts=[];renderPanel();renderMap(lastM);renderMapTools();break;
     case 'path-done':finishPath();break;
     case 'path-clear':state.map.path=[];state.geo={};save();recompute();break;
