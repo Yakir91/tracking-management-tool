@@ -134,6 +134,7 @@ td.num,.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-s
 .ev .acts{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .ev.late .t{color:var(--bad)}
 .ev input[type=time]{padding:3px 5px;font-size:.8rem}
+.share-in{border:1px solid var(--accent);background:var(--accent-soft);border-radius:var(--r);padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}
 .busy{position:fixed;inset:0;z-index:5000;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 70%,transparent);font-family:var(--f-display);font-size:1.3rem}
 textarea{width:100%;min-height:90px;resize:vertical;font-family:var(--f-mono);font-size:.8rem}
 .tag{font-size:.7rem;padding:1px 6px;border-radius:4px;background:var(--chip);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
@@ -212,6 +213,7 @@ textarea{width:100%;min-height:90px;resize:vertical;font-family:var(--f-mono);fo
       <span class="clock" id="clock" aria-live="off"></span>
     </div>
   </header>
+  <section class="share-in" id="share-in" hidden></section>
   <section class="kpis" id="kpis" aria-label="סיכום"></section>
   <div class="main">
     <aside class="panel">
@@ -761,7 +763,7 @@ function crossCard(t){const g=t.geo;if(!g.cross||!g.cross.length)return '';const
 
 /* ===== UI ===== */
 let lastM=null;
-const TABS=[['comp','נבחנים'],['field','שטח ומפה'],['draw','קבוצות והגרלות'],['sched','לו״ז'],['cards','כרטיסי מניחים'],['live','בקרה חיה'],['set','הגדרות']];
+const TABS=[['comp','נבחנים'],['field','שטח ומפה'],['draw','קבוצות והגרלות'],['sched','לו״ז'],['cards','כרטיסי מניחים'],['live','בקרה חיה'],['share','שיתוף'],['set','הגדרות']];
 function renderTabs(){$('#tabs').innerHTML=TABS.map(([k,l])=>`<button role="tab" type="button" data-tab="${k}" aria-selected="${state.ui.tab===k}">${l}</button>`).join('');}
 function lvTag(k){const lv=LEVELS[k];return `<span class="lv"><i style="background:${lv.color}"></i>${lv.short}</span>`;}
 function lvOptions(sel){return LKEYS.map(k=>`<option value="${k}" ${k===sel?'selected':''}>${LEVELS[k].short} · ${LEVELS[k].heb}</option>`).join('');}
@@ -824,6 +826,14 @@ function renderPanel(){
     else{const ev=liveEvents(M);h+=`<p class="note">אירועים פתוחים לפי סדר הזמנים. אפשר להזין שעה ידנית לפני הלחיצה.</p>`;
       h+=ev.slice(0,40).map(e=>`<div class="ev ${e.t<M.NOW-1?'late':''}"><span class="t">${fmt(e.t)}</span><span>${e.txt}</span><div class="acts"><input type="time" id="tm-${e.key}" aria-label="שעה ידנית">${e.btns}</div></div>`).join('')||'<p class="note">אין אירועים פתוחים.</p>';
       h+=`<div class="row"><button class="btn sm" data-act="reset-actuals" type="button">מחק את כל הרישומים בפועל</button></div>`;}
+  }
+  else if(tab==='share'){
+    const hosted=/^https?:$/.test(location.protocol)&&!/claudeusercontent|claude\.ai/.test(location.host);
+    h+=`<div class="box"><h4>קישור שיתוף</h4><p class="note">הקישור מכיל את כל המבחן: נבחנים, שטחים ושבילים, מסלולים, הגרלות, לו״ז וזמנים שנרשמו. מי שפותח אותו מקבל את אותה פריסה על המפה האמיתית במכשיר שלו, בלי התקנה ובלי הרשמה.</p>
+      <p class="note">זו תמונת מצב של הרגע שבו יצרתם את הקישור. שינויים שתעשו אחר כך לא יגיעו למי שכבר פתח אותו, וצריך לשלוח קישור חדש.</p>
+      ${hosted?'':`<p class="note" style="color:var(--warn)">כדי שאחרים יוכלו לפתוח את הקישור, המערכת צריכה לרוץ מכתובת אינטרנט, למשל GitHub Pages. קישור מקובץ שפתוח במחשב או מהתצוגה כאן לא ייפתח אצל אחרים.</p>`}
+      <div class="row"><button class="btn pri" data-act="share-make" type="button">צור קישור</button>${shareUrl?`<button class="btn" data-act="share-copy" type="button">העתק</button>${navigator.share?'<button class="btn" data-act="share-send" type="button">שלח…</button>':''}`:''}</div>
+      ${shareUrl?`<textarea id="share-out" readonly aria-label="קישור השיתוף">${esc(shareUrl)}</textarea><p class="note">אורך הקישור: ${shareUrl.length.toLocaleString('he-IL')} תווים.</p>`:''}</div>`;
   }
   else if(tab==='set'){
     const num=(k,l,st=1,min=0)=>`<label for="s-${k}">${l}</label><input type="number" id="s-${k}" data-set="${k}" value="${s[k]}" step="${st}" min="${min}">`;
@@ -918,6 +928,26 @@ function renderCtrl(M){const el=$('#ctrl');const t=M&&M.tracks.find(x=>x.id===st
   el.innerHTML=h;el.hidden=false;}
 const hmStr=m=>{const r=Math.round(m);const x=((r%1440)+1440)%1440;return pad(Math.floor(x/60))+':'+pad(x%60);};
 
+/* ===== sharing: the whole trial packed into the link (gzip + base64url in the #hash) ===== */
+let shareUrl='';
+const r1=v=>JSON.parse(JSON.stringify(v,(k,x)=>typeof x==='number'?Math.round(x*10)/10:x));
+function shareBody(){const m=state.map;return {v:1,at:Date.now(),settings:state.settings,competitors:state.competitors.map(({example,...c})=>c),
+  map:{mode:m.mode==='image'?'schematic':m.mode,fields:r1(m.fields||[]),paths:r1(m.paths||[]),base:r1(m.base),origin:m.origin,center:m.center},
+  draws:state.draws,geo:r1(state.geo),trackNo:state.trackNo,actuals:state.actuals,pins:state.pins||{},judgeOverride:state.judgeOverride,live:state.live,lastGen:state.lastGen};}
+const b64u=buf=>{let s='';const b=new Uint8Array(buf);for(let i=0;i<b.length;i+=0x8000)s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
+const unb64u=str=>{const s=atob(str.replace(/-/g,'+').replace(/_/g,'/'));const b=new Uint8Array(s.length);for(let i=0;i<s.length;i++)b[i]=s.charCodeAt(i);return b;};
+async function packShare(){const json=JSON.stringify(shareBody());const st=new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));return b64u(await new Response(st).arrayBuffer());}
+async function unpackShare(code){const st=new Blob([unb64u(code)]).stream().pipeThrough(new DecompressionStream('gzip'));return JSON.parse(await new Response(st).text());}
+async function makeShare(){try{const code=await packShare();shareUrl=location.origin+location.pathname+'#s='+code;renderPanel();}catch(e){toast('לא הצלחתי ליצור קישור בדפדפן הזה.');}}
+let incoming=null;
+async function checkIncoming(){const h=location.hash||'';if(!h.startsWith('#s='))return;try{incoming=await unpackShare(h.slice(3));}catch(e){incoming=null;toast('קישור השיתוף פגום או נחתך באמצע. בקשו קישור חדש.');return;}
+  const nF=(incoming.map.fields||[]).length,nC=(incoming.competitors||[]).length;const when=new Date(incoming.at).toLocaleString('he-IL',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'});
+  const el=$('#share-in');el.innerHTML=`<span>התקבל מבחן משותף: ${nC} נבחנים, ${nF} ${nF===1?'שטח':'שטחים'}, תאריך המבחן ${esc(incoming.settings.date)}. נוצר ב-${when}.</span><span class="row"><button class="btn pri" data-act="share-accept" type="button">פתח את המבחן המשותף</button><button class="btn" data-act="share-reject" type="button">השאר את שלי</button></span>`;el.hidden=false;}
+function clearHash(){try{history.replaceState(null,'',location.pathname+location.search);}catch(e){location.hash='';}}
+function acceptShare(){const d=defaultState();const v=incoming;
+  state={...d,...v,settings:Object.assign(d.settings,v.settings),map:Object.assign(d.map,v.map,{image:null,layouts:{}}),ui:Object.assign(d.ui,{tab:'field'})};
+  ['draws','geo','trackNo','actuals','judgeOverride','pins'].forEach(k=>state[k]=state[k]||{});delete state.v;delete state.at;
+  incoming=null;$('#share-in').hidden=true;clearHash();save();renderTabs();initMap();recompute();fitField();toast('המבחן המשותף נפתח ונשמר במכשיר הזה.');}
 let toastT=null;function toast(msg){mapNote(msg);clearTimeout(toastT);toastT=setTimeout(()=>{if(!tileFailed)mapNote(null);},7000);}
 function recompute(){
   const M=buildModel();if(M.tracks.length){schedule(M);try{computeRoutes(M);}catch(e){console.error(e);}}else{M.NOW=nowMin();}
@@ -938,6 +968,11 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-act
   switch(a){
     case 'zoom':state.ui.zoom=Math.max(.8,Math.min(8,state.ui.zoom*(el.dataset.v==='1'?1.3:1/1.3)));renderGantt(lastM);save();break;
     case 'sel':selectTrack(id,false);break;
+    case 'share-make':await makeShare();break;
+    case 'share-copy':{const ta=$('#share-out');try{await navigator.clipboard.writeText(shareUrl);toast('הקישור הועתק.');}catch(e){if(ta){ta.focus();ta.select();}toast('ההעתקה נחסמה. הקישור מסומן, העתיקו אותו ידנית.');}break;}
+    case 'share-send':try{await navigator.share({title:'מבחן גישוש '+state.settings.date,url:shareUrl});}catch(e){}break;
+    case 'share-accept':if(incoming)acceptShare();break;
+    case 'share-reject':incoming=null;$('#share-in').hidden=true;clearHash();break;
     case 'clear-ex':state.competitors=state.competitors.filter(c=>!c.example);state.draws={};save();regen();break;
     case 'add-comp':{const hN=$('#c-h').value.trim(),dN=$('#c-d').value.trim(),l=$('#c-l').value;if(!hN&&!dN){toast('הזינו שם מוביל או שם כלב.');return;}state.competitors.push({id:uid(),handler:hN,dog:dN,level:l});save();regen();$('#c-h')&&$('#c-h').focus();break;}
     case 'bulk':{const map2={FPR1:'FPR1',FPR2:'FPR2',FPR3:'FPR3',FH1:'IFH1',FH2:'IFH2',FH3:'IFH3',IFH1:'IFH1',IFH2:'IFH2',IFH3:'IFH3',IGP1:'FPR1',IGP2:'FPR2',IGP3:'FPR3'};let n=0,bad=0;
@@ -1032,7 +1067,7 @@ setInterval(()=>{tick();if(state.live)recompute();},30000);
 
 /* ===== boot ===== */
 {const m=state.map;const mig=o=>{if(!o)return;if(o.field&&!o.fields){o.fields=o.field.length>2?[o.field]:[];o.paths=o.path&&o.path.length>=2?[o.path]:[];}delete o.field;delete o.path;o.fields=o.fields||[];o.paths=o.paths||[];};mig(m);Object.values(m.layouts||{}).forEach(mig);}if(state.settings.setback==null)state.settings.setback=12;if(state.settings.autoOrder==null)state.settings.autoOrder=true;
-renderTabs();initMap();probeTiles();
+renderTabs();initMap();probeTiles();checkIncoming();
 {const M0=buildModel();if(hasField()&&M0.tracks.length&&M0.tracks.some(t=>!t.geo||t.geo.level!==t.level))generateTracks();}
 recompute();
 window.__ttm={state:()=>state,model:()=>lastM,generateTracks,recompute};
