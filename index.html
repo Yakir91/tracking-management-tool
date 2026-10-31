@@ -25,6 +25,7 @@
   --accent:#ff7b36; --accent-ink:#1a0d04; --accent-soft:#3a2416;
   --field:#1f251b; --grid:#2e3727; --ok:#5fbf6c; --warn:#e0a640; --bad:#ef6a5a; --chip:#262d21; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5}
 button,input,select,textarea{font:inherit;color:inherit}
 .app{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 28px;display:flex;flex-direction:column;gap:12px;max-width:1700px;margin:0 auto}
@@ -637,7 +638,10 @@ function generateTracks(){
   let extra=0;const depthNeed={};
   for(const lk in byLevel){const b=byLevel[lk];const miss=b.need-b.placed;if(miss>0){const fp=footprint(lk);const w=b.w.length?b.w.reduce((a,x)=>a+x,0)/b.w.length:fp.w;extra+=miss*(w+s.sep);if(!b.placed)depthNeed[lk]=Math.round(fp.dMin+s.edge+5);}delete b.w;}
   let dsum=0,dn=0;for(const sl of slots)for(let f=0.1;f<0.95;f+=0.1){const q=pathAt(sl.P.pts,sl.PL*f);const d=Math.min(rayDepth(q.p,[-q.T[1]*sl.sd,q.T[0]*sl.sd],sl.field),sl.hg);if(d>20){dsum+=d;dn++;}}
-  state.lastGen={at:Date.now(),fails,byLevel,extra:Math.round(extra),depthNeed,frontage:Math.round(slots.reduce((a,x)=>a+x.PL,0)),paths:PS.length,depth:dn?Math.round(dsum/dn):0,area:Math.round(totalArea()),fields:fieldsOf().length};save();
+  // drawn paths in one field that leave too little room between them for any lane
+  const close=[];const minGap=2*(s.setback+60+s.edge);for(let x=0;x<PS.length;x++)for(let y=x+1;y<PS.length;y++){const A=PS[x],B=PS[y];if(A.fi!==B.fi||A.auto||B.auto)continue;
+    let d=Infinity;for(const f of [0,.25,.5,.75,1])d=Math.min(d,segDistP(pathAt(A.pts,pathLen(A.pts)*f).p,B),segDistP(pathAt(B.pts,pathLen(B.pts)*f).p,A));if(d<minGap)close.push({a:A.pi,b:B.pi,d:Math.round(d),need:Math.round(minGap)});}
+  state.lastGen={at:Date.now(),fails,byLevel,closePaths:close,extra:Math.round(extra),depthNeed,frontage:Math.round(slots.reduce((a,x)=>a+x.PL,0)),paths:PS.length,depth:dn?Math.round(dsum/dn):0,area:Math.round(totalArea()),fields:fieldsOf().length};save();
   if(fails)toast(fails+' מסלולים לא נכנסו בשטח שסומן. הפירוט בלשונית "שטח ומפה".');
 }
 
@@ -715,14 +719,14 @@ function renderMap(M){
     const done=t.act.je!=null;const op=dim?0.35:(done?0.45:1);
     if(t.approach&&!done&&(isSel||(state.ui.showRoutes&&!sel)))L.polyline(t.approach.path.map(toLL),{color:t.approach.blocked?'#c0392b':'#555',weight:1.6,dashArray:'2 5',opacity:.9,interactive:false}).addTo(lyr);
     const ll=g.pts.map(toLL);L.polyline(ll,{color:'#fff',weight:isSel?9:6,opacity:op}).addTo(lyr);
-    const pl=L.polyline(ll,{color:col,weight:isSel?5:3.2,opacity:op}).addTo(lyr);pl.on('click',()=>selectTrack(t.id,true));pl.bindTooltip('מסלול '+t.no+' · '+t.lv.short,{sticky:true,direction:'top'});
+    const pl=L.polyline(ll,{color:col,weight:isSel?5:3.2,opacity:op}).addTo(lyr);pl.on('click',()=>{if(!drawMode)selectTrack(t.id,true);});pl.bindTooltip('מסלול '+t.no+' · '+t.lv.short,{sticky:true,direction:'top'});
     L.polyline(g.tail.map(toLL),{color:col,weight:2,dashArray:'3 4',opacity:op,interactive:false}).addTo(lyr);
     g.articles.forEach(a=>L.marker(toLL(a.pt),{icon:icon('','m-art',[9,9]),interactive:false,opacity:op}).addTo(lyr));
     g.cross.forEach(c=>{L.polyline([toLL(c.a),toLL(c.b)],{color:'#fff',weight:5,opacity:op,interactive:false}).addTo(lyr);L.polyline([toLL(c.a),toLL(c.b)],{color:'#111',weight:2.4,dashArray:'7 5',opacity:op,interactive:false}).addTo(lyr);
       if(isSel){L.marker(toLL(c.a),{icon:icon('<span class="m-pt">A</span>','',[0,0]),interactive:false}).addTo(lyr);L.marker(toLL(c.b),{icon:icon('<span class="m-pt">B</span>','',[0,0]),interactive:false}).addTo(lyr);
         c.cx.forEach(x=>L.circleMarker(toLL(x.cp),{radius:5,color:'#111',weight:2,fillColor:'#fff',fillOpacity:1,interactive:false}).addTo(lyr));
         (t.crossRoutes||[]).forEach(r=>r&&L.polyline(r.path.map(toLL),{color:'#111',weight:1.6,dashArray:'1 5',interactive:false}).addTo(lyr));}});
-    const fl=L.marker(toLL(g.pts[0]),{icon:icon('<div class="m-flag" style="color:'+col+'"><span>'+t.no+'</span></div>','',[0,0]),opacity:op}).addTo(lyr);fl.on('click',()=>selectTrack(t.id,true));
+    const fl=L.marker(toLL(g.pts[0]),{icon:icon('<div class="m-flag" style="color:'+col+'"><span>'+t.no+'</span></div>','',[0,0]),opacity:op}).addTo(lyr);fl.on('click',e=>{if(drawMode){onMapClick(e);return;}selectTrack(t.id,true);});
   }
   const lg=$('#legend');const used=[...new Set(M.tracks.map(t=>t.level))];
   lg.innerHTML=used.map(k=>'<span class="lv"><i style="background:'+LEVELS[k].color+'"></i>'+LEVELS[k].short+'</span>').join('')+(used.length?'<span class="lv"><i style="background:#111;height:3px"></i>עקבה חוצה</span><span class="lv"><i style="background:transparent;border-top:2px dotted #555;height:0"></i>נתיב הליכה</span>':'');
@@ -856,7 +860,9 @@ function fitBox(M,area){if(!M||!M.tracks.length)return '';const N=needOf(M);cons
   if(G&&G.byLevel){const rows=Object.entries(G.byLevel).map(([k,b])=>`<tr><td>${lvTag(k)}</td><td class="num">${b.placed} / ${b.need}</td><td>${b.placed===b.need?'<span class="pill ok">נכנס</span>':`<span class="pill bad">חסרים ${b.need-b.placed}</span>`}</td></tr>`).join('');
     h+=`<div class="tw"><table><thead><tr><th>רמה</th><th>נכנסו</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
     if(G.fails){h+=`<p class="note" style="color:var(--bad)">${G.fails} מסלולים לא נכנסו. כדי להכניס אותם צריך עוד כ-<b class="mono">${G.extra}</b> מ׳ של חזית לאורך השביל, או שטח גם בצד השני של השביל.</p>`;
-      const shallow=Object.entries(G.depthNeed||{}).filter(([k,d])=>!G.depth||d>G.depth*0.9);
+      const DPi=(state.map.paths||[]).map((p,i)=>i).filter(i=>(state.map.paths[i]||[]).length>=2);const pn=i=>'שביל '+(DPi.indexOf(i)+1);
+      for(const c of G.closePaths||[])h+=`<p class="note" style="color:var(--bad)">${pn(c.a)} ו${pn(c.b)} קרובים מדי זה לזה (${c.d} מ׳). המסלולים של כל שביל יכולים להגיע רק עד חצי הדרך לשביל השני, ולכן צריך לפחות כ-${c.need} מ׳ ביניהם. מחקו אחד מהם או הרחיקו אותו.</p>`;
+      const shallow=(G.closePaths||[]).length?[]:Object.entries(G.depthNeed||{}).filter(([k,d])=>!G.depth||d>G.depth*0.9);
       if(shallow.length)h+=`<p class="note" style="color:var(--bad)">השטח רדוד מדי ל-${shallow.map(([k,d])=>`${LEVELS[k].short} (צריך כ-${d} מ׳)`).join(', ')}. העומק הממוצע מהשביל כאן ${G.depth} מ׳; בחרו שטח עמוק יותר או סמנו את השביל בצד אחר של השטח.</p>`;}
     else h+=`<p class="note" style="color:var(--ok)">כל המסלולים נכנסו בשטח שסומן.</p>`;}
   return h+`</div>`;}
@@ -948,6 +954,10 @@ function acceptShare(){const d=defaultState();const v=incoming;
   state={...d,...v,settings:Object.assign(d.settings,v.settings),map:Object.assign(d.map,v.map,{image:null,layouts:{}}),ui:Object.assign(d.ui,{tab:'field'})};
   ['draws','geo','trackNo','actuals','judgeOverride','pins'].forEach(k=>state[k]=state[k]||{});delete state.v;delete state.at;
   incoming=null;$('#share-in').hidden=true;clearHash();save();renderTabs();initMap();recompute();fitField();toast('המבחן המשותף נפתח ונשמר במכשיר הזה.');}
+function regen(){if(state.live){toast('במצב חי המסלולים לא מוצבים מחדש אוטומטית. לחצו "צור מסלולים מחדש" אם צריך.');recompute();return;}
+  if(!hasField()){recompute();return;}
+  const bz=document.createElement('div');bz.className='busy';bz.textContent='מציב מסלולים בשטח…';document.body.appendChild(bz);
+  setTimeout(()=>{try{generateTracks();}catch(e){console.error(e);toast('הצבת המסלולים נכשלה. הנתונים נשמרו; נסו "צור מסלולים מחדש".');}finally{bz.remove();}recompute();},30);}
 let toastT=null;function toast(msg){mapNote(msg);clearTimeout(toastT);toastT=setTimeout(()=>{if(!tileFailed)mapNote(null);},7000);}
 function recompute(){
   const M=buildModel();if(M.tracks.length){schedule(M);try{computeRoutes(M);}catch(e){console.error(e);}}else{M.NOW=nowMin();}
