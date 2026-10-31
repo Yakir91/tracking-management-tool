@@ -161,6 +161,16 @@ describe('fields, groups, sharing', () => {
     expect(placed + G.fails).toBe(15);
   });
 
+  it('fits two FH 3 tracks and an FH 2 in the demo field (no frontage wasted on wide shapes)', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      setRandom(seeded(seed));
+      const st = defaultState();
+      st.competitors[0].level = 'IFH3';
+      generateTracks(st);
+      expect(st.lastGen!.fails).toBe(0);
+    }
+  });
+
   it('chooses group size 3 for short aging and one group for own-laid levels', () => {
     const st = defaultState();
     expect(groupSizeFor(st, 'FPR3')).toBe(3);

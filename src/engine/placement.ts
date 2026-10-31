@@ -53,6 +53,21 @@ export interface GenResult { ok: boolean; message?: string }
  * Mutates st: geo, trackNo, actuals (cleared), lastGen (fit report) and, with auto order, settings.levelOrder.
  */
 export function generateTracks(st: TrialState): GenResult {
+  // shapes are random: when something is left out, try again a couple of times and keep the best layout
+  let r = generateOnce(st);
+  if (!r.ok || !st.lastGen || !st.lastGen.fails) return r;
+  let best = { r, geo: st.geo, trackNo: st.trackNo, lastGen: st.lastGen };
+  for (let k = 0; k < 2 && best.lastGen.fails; k++) {
+    r = generateOnce(st);
+    if (st.lastGen && st.lastGen.fails < best.lastGen.fails) best = { r, geo: st.geo, trackNo: st.trackNo, lastGen: st.lastGen };
+  }
+  st.geo = best.geo;
+  st.trackNo = best.trackNo;
+  st.lastGen = best.lastGen;
+  return best.r;
+}
+
+function generateOnce(st: TrialState): GenResult {
   const s = st.settings;
   if (!hasField(st)) return { ok: false, message: 'יש לסמן קודם את שטח המסלולים על המפה.' };
   const F = st.map.fields;
@@ -121,14 +136,20 @@ export function generateTracks(st: TrialState): GenResult {
     for (const lm of [130, 220, 340]) {
       const key = t.level + '|' + lm + '|' + Math.floor(dmax / 25);
       if (failCache.has(key)) continue;
-      for (let a = 0; a < 12; a++) {
+      // collect a few valid shapes and use the narrowest, so long tracks don't eat the frontage the next ones need
+      const cands: TrackGeo[] = [];
+      for (let a = 0; a < 12 && cands.length < 4; a++) {
         const sh = laneShape(lv, s, dmax, lm, 500);
-        if (!sh) { failCache.add(key); break; }
+        if (!sh) { if (!cands.length) failCache.add(key); break; }
         const w = toWorld(sh, q.p, T, N);
         if (!fieldOK(w, s, sl.field, sl.fe)) continue;
         const segs = shapeSegs(w);
         if (segs.some((g) => pathSegs.some((e) => segSeg(g[0], g[1], e[0], e[1]) < 3))) continue;
         if (!clear(segs, bboxOf(w.pts.concat(w.tail)), obs, s.sep, s.crossClear)) continue;
+        cands.push(w);
+      }
+      cands.sort((a, b) => a.maxU - b.maxU);
+      for (const w of cands) {
         if (lv.cross) {
           const cr = genCross(st, w, sl.field, obs, pathSegs);
           if (!cr) continue;

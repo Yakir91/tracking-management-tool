@@ -4,7 +4,7 @@ A single-page web tool for planning and running FCI-IGP tracking trials and cham
 
 Live: https://yakir91.github.io/tracking-management-tool/
 
-Open `index.html` in a browser, or use the live site above. No build step and no server: everything runs in the browser and is saved in the browser's local storage. A trial can be shared as a link from the Share tab.
+Everything runs in the browser and is saved in the browser's local storage; there is no server. A trial can be shared as a link from the Share tab.
 
 ## What it does
 
@@ -43,6 +43,24 @@ Open `index.html` in a browser, or use the live site above. No build step and no
 - **Judging order:** chosen automatically to shorten the trial.
 - **Layer cards:** for each tracklayer, with paces, compass bearings and article positions.
 - **Live mode:** record actual times, and the rest of the schedule re-flows around delays.
+
+## Development
+
+React 18, TypeScript and Vite. Leaflet draws the map.
+
+```sh
+npm install
+npm run dev        # local dev server
+npm test           # engine unit tests (Vitest)
+npm run test:e2e   # browser tests (Playwright) against the production build
+npm run build      # static site in dist/
+```
+
+- `src/engine/` holds the planning logic with no UI: track shapes, field layout, scheduling, walking routes, cross tracks, draws and share links. Unit tests in `tests/unit/` check the trial rules (aging, judge sequencing, laying, 22 m separation, field boundaries, cross tracks, articles).
+- `src/state/store.ts` holds the trial state and every action the interface can take.
+- `src/ui/` holds the React components: map, timeline with the per-track control, and the side panel tabs.
+
+Every push to `main` runs the type check, unit tests and browser tests, then deploys `dist/` to GitHub Pages (`.github/workflows/deploy.yml`). Pages must be set to deploy from **GitHub Actions** (Settings → Pages → Source).
 
 ## Sources
 
