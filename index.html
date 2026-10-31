@@ -186,6 +186,7 @@ textarea{width:100%;min-height:90px;resize:vertical;font-family:var(--f-mono);fo
 .m-art{width:9px;height:9px;background:#fff;border:2px solid #111;transform:rotate(45deg)}
 .m-pt{font:700 10px/1 var(--f-mono);background:#111;color:#fff;border-radius:3px;padding:2px 3px;text-align:center}
 .m-base{font:600 11px/1 var(--f-body);background:var(--accent);color:#fff;border-radius:999px;padding:4px 8px;border:2px solid #fff;white-space:nowrap;direction:rtl}
+.m-vtx{background:#fff;border:2px solid #de5510;border-radius:2px;cursor:move}.m-vtx.path{border-color:#8a5a1f;border-radius:50%}
 .m-lbl{font:600 11px/1 var(--f-mono);color:#111;background:rgba(255,255,255,.85);padding:1px 3px;border-radius:2px;white-space:nowrap}
 </style>
 
@@ -243,7 +244,7 @@ const LEVELS={
  IFH3:{code:'IFH3',short:'FH 3',heb:'כלב גישוש 3',eq:'FCI-IFH 3 / IGP-FH',own:false,paces:1800,legs:8,acute:2,semi:true,articles:7,aging:180,work:45,cross:2,phases:3,est:28,leash:10,color:'#9a1fa6',art:'ifh'}
 };
 const LKEYS=Object.keys(LEVELS);
-const STORE='tracking-trial-manager-v5';
+const STORE='tracking-trial-manager-v7';
 
 /* ===== small utils ===== */
 const $=(s,r=document)=>r.querySelector(s);
@@ -300,9 +301,9 @@ function legAtPace(sh,pace){for(let i=sh.legs.length-1;i>=0;i--)if(pace>=sh.legs
    Keeping every heading inside [0,180] makes the track move only forward along the path, so neighbouring lanes never interleave. */
 const vec=h=>[Math.sin(h*D),Math.cos(h*D)];
 const n360=x=>((x%360)+360)%360;
-function laneShape(lv,s){
+function laneShape(lv,s,dmax=Infinity,latMax=130,tries=2500){
   const p=s.pace,L=lv.legs,nC=L-1,MIN=55;
-  for(let tr=0;tr<2500;tr++){
+  for(let tr=0;tr<tries;tr++){
     let semiIdx=-1,semiP=0;if(lv.semi){semiIdx=1+Math.floor(Math.random()*(L-2));semiP=Math.round(Math.PI*s.semiR/p);}
     const acute=new Set();
     if(lv.acute){if(lv.acuteLast)acute.add(nC-1);else{let g=0;while(acute.size<lv.acute&&g++<80){const c=Math.floor(Math.random()*nC);if(acute.has(c-1)||acute.has(c+1))continue;acute.add(c);}}}
@@ -327,7 +328,7 @@ function laneShape(lv,s){
     const cands=line.filter(i=>i!==a&&cs(i)>0.7);if(!cands.length)continue;const b=cands[Math.floor(Math.random()*cands.length)];
     const P=lv.paces-semiP;let So=0,Do=0;const depthN=line.filter(i=>Math.abs(cs(i))>0.7).length;
     const latSum=line.filter(i=>Math.abs(cs(i))<=0.7).length*95;const avgD=Math.max(MIN,(P-latSum)/Math.max(1,depthN));
-    for(const i of line){if(i===a||i===b)continue;const c=Math.abs(cs(i));legs[i].paces=c<0.3?Math.round(rnd(60,130)):Math.max(MIN,Math.round(P/line.length*rnd(0.6,1.3)));So+=legs[i].paces;Do+=legs[i].paces*cs(i);}
+    for(const i of line){if(i===a||i===b)continue;const c=Math.abs(cs(i));legs[i].paces=c<0.3?Math.round(rnd(60,latMax)):Math.max(MIN,Math.round(P/line.length*rnd(0.6,1.3)));So+=legs[i].paces;Do+=legs[i].paces*cs(i);}
     const vStart=s.setback,vEnd=s.setback+rnd(0,6);const Dt=(vEnd-vStart)/p;const ca=Math.cos(legs[a].hIn*D),cb=Math.cos(legs[b].hIn*D);
     const La=Math.round(((Dt-Do)-cb*(P-So))/(ca-cb));const Lb=P-So-La;if(La<MIN||Lb<MIN)continue;legs[a].paces=La;legs[b].paces=Lb;
     // build
@@ -342,7 +343,7 @@ function laneShape(lv,s){
       cum+=leg.paces;leg.k1=pts.length-1;});
     const fe=vec(legs[a].hOut);const tail=[cur.slice(),[cur[0]+fe[0]*10*p,cur[1]+fe[1]*10*p]];
     if(pts.some(q=>q[1]<s.setback*0.6||q[0]<-1)||tail[1][1]<1)continue;
-    const lim=0.24*lv.paces*p+70;if(Math.max(...pts.map(q=>q[0]))>lim||Math.max(...pts.map(q=>q[1]))>lim+40)continue;
+    const lim=0.24*lv.paces*p+70;if(Math.max(...pts.map(q=>q[0]))>lim+(latMax-130)*2.5||Math.max(...pts.map(q=>q[1]))>Math.min(lim+40,dmax))continue;
     const sh={pts,pp,segLeg,legs,corners,tail,total:cum,articles:[],cross:[],maxU:Math.max(...pts.map(q=>q[0]),tail[1][0])};
     const sg=shapeSegs(sh);let bad=false;
     for(let x=0;x<sg.length&&!bad;x++)for(let y=x+1;y<sg.length;y++){if(Math.abs(sg[x][2]-sg[y][2])>=2&&segSeg(sg[x][0],sg[x][1],sg[y][0],sg[y][1])<s.intraSep){bad=true;break;}}
@@ -352,6 +353,13 @@ function laneShape(lv,s){
   }
   return null;
 }
+/* typical lane size per level (width along the path, depth into the field), from sampled shapes */
+const fpCache={};
+function footprint(lk){const s=state.settings;const key=lk+'|'+[s.pace,s.intraSep,s.semiR,s.setback].join(',');if(fpCache[key])return fpCache[key];
+  const lv=LEVELS[lk];let w=0,d=0,n=0,dMin=Infinity;
+  for(let i=0;i<14;i++){const sh=laneShape(lv,s);if(!sh)continue;w+=sh.maxU;d+=Math.max(...sh.pts.map(q=>q[1]));n++;}
+  for(let i=0;i<14;i++){const sh=laneShape(lv,s,Infinity,340,800);if(!sh)continue;dMin=Math.min(dMin,Math.max(...sh.pts.map(q=>q[1])));}
+  return fpCache[key]={w:n?w/n:100,d:n?d/n:150,dMin:isFinite(dMin)?dMin:(n?d/n:150)};}
 function toWorld(sh,O,T,N){
   const w=q=>[O[0]+T[0]*q[0]+N[0]*q[1],O[1]+T[1]*q[0]+N[1]*q[1]];
   const wv=h=>{const f=vec(h);return [T[0]*f[0]+N[0]*f[1],T[1]*f[0]+N[1]*f[1]];};
@@ -361,10 +369,23 @@ function toWorld(sh,O,T,N){
   return {pts:sh.pts.map(w),pp:sh.pp,segLeg:sh.segLeg,legs,corners,tail:sh.tail.map(w),total:sh.total,articles:sh.articles.map(a=>({...a,pt:w(a.pt)})),cross:[],exitBearing:brg(wv(sh.legs[sh.legs.length-1].hOut)),maxU:sh.maxU};
 }
 /* access path: drawn by the user, or the longest field edge pulled 15 m inward */
-function getPath(){const m=state.map;if(m.path&&m.path.length>=2)return {pts:m.path,auto:false};const f=m.field;if(!f||f.length<3)return null;
+/* Access paths. A drawn path is used as is. Otherwise paths run parallel to the field's longest side:
+   one path along the edge for a shallow field, or paths with lanes on both sides spaced so the field's depth is used. */
+function clipLine(p0,T,poly){const ts=[];for(let i=0;i<poly.length;i++){const A=poly[i],B=poly[(i+1)%poly.length];const e=[B[0]-A[0],B[1]-A[1]];const den=T[0]*e[1]-T[1]*e[0];if(Math.abs(den)<1e-9)continue;
+    const w=[A[0]-p0[0],A[1]-p0[1]];const t=(w[0]*e[1]-w[1]*e[0])/den,u=(w[0]*T[1]-w[1]*T[0])/den;if(u>=0&&u<=1)ts.push(t);}
+  ts.sort((a,b)=>a-b);let best=null;for(let k=0;k<ts.length-1;k++){const m=(ts[k]+ts[k+1])/2;if(!inPoly([p0[0]+T[0]*m,p0[1]+T[1]*m],poly))continue;if(!best||ts[k+1]-ts[k]>best[1]-best[0])best=[ts[k],ts[k+1]];}
+  if(!best||best[1]-best[0]<40)return null;const a=best[0]+8,b=best[1]-8;return [[p0[0]+T[0]*a,p0[1]+T[1]*a],[p0[0]+T[0]*b,p0[1]+T[1]*b]];}
+function needDepth(){const s=state.settings;const lv=[...new Set(state.competitors.map(c=>c.level))];if(!lv.length)return 150;return Math.max(...lv.map(k=>footprint(k).d))+s.setback+s.edge;}
+let pathsCache=null;
+function getPaths(){const m=state.map;if(m.path&&m.path.length>=2)return [{pts:m.path,auto:false}];const f=m.field;if(!f||f.length<3)return [];
+  const key=JSON.stringify(f)+'|'+needDepth();if(pathsCache&&pathsCache.key===key)return pathsCache.v;
   let bi=0,bl=0;for(let i=0;i<f.length;i++){const l=dist(f[i],f[(i+1)%f.length]);if(l>bl){bl=l;bi=i;}}const a=f[bi],b=f[(bi+1)%f.length];
   const c=[f.reduce((x,q)=>x+q[0],0)/f.length,f.reduce((x,q)=>x+q[1],0)/f.length];const T=[(b[0]-a[0])/bl,(b[1]-a[1])/bl];let N=[-T[1],T[0]];if(N[0]*(c[0]-a[0])+N[1]*(c[1]-a[1])<0)N=[-N[0],-N[1]];
-  return {pts:[[a[0]+N[0]*15,a[1]+N[1]*15],[b[0]+N[0]*15,b[1]+N[1]*15]],auto:true};}
+  const D=Math.max(...f.map(q=>(q[0]-a[0])*N[0]+(q[1]-a[1])*N[1]));const M=needDepth();const offs=[];
+  if(D<1.7*M)offs.push(15);else{for(let v=Math.min(M,D/2);v+0.55*M<=D+1;v+=2*M+state.settings.sep)offs.push(v);}
+  const v=offs.map(o=>{const seg=clipLine([a[0]+N[0]*o,a[1]+N[1]*o],T,f);return seg?{pts:seg,auto:true}:null;}).filter(Boolean);
+  pathsCache={key,v};return v;}
+function getPath(){return getPaths()[0]||null;}
 function pathLen(P){let L=0;for(let i=1;i<P.length;i++)L+=dist(P[i-1],P[i]);return L;}
 function pathAt(P,sv){let acc=0;for(let i=0;i<P.length-1;i++){const L=dist(P[i],P[i+1]);if(sv<=acc+L||i===P.length-2){const T=[(P[i+1][0]-P[i][0])/L,(P[i+1][1]-P[i][1])/L];const d=sv-acc;return {p:[P[i][0]+T[0]*d,P[i][1]+T[1]*d],T};}acc+=L;}}
 function placeArticles(sh,lv){
@@ -383,7 +404,7 @@ function edgesOf(poly){const e=[];for(let i=0;i<poly.length;i++)e.push([poly[i],
 function clear(segs,bb,obs,needTrack,needCross){
   for(const o of obs){const need=o.kind==='track'?needTrack:needCross;if(need<=0)continue;if(!bbHit([bb[0]-need,bb[1]-need,bb[2]+need,bb[3]+need],o.bb))continue;
     for(const g of segs)for(const h of o.segs){if(segSeg(g[0],g[1],h[0],h[1])<need)return false;}}return true;}
-function nearestOnPath(q){const P=getPath();if(!P||!q)return null;let best=null,bd=Infinity;for(let i=0;i<P.pts.length-1;i++){const a=P.pts[i],b=P.pts[i+1];const dx=b[0]-a[0],dy=b[1]-a[1];const L2=dx*dx+dy*dy;let t=L2?((q[0]-a[0])*dx+(q[1]-a[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));const pp=[a[0]+t*dx,a[1]+t*dy];const d=dist(pp,q);if(d<bd){bd=d;best=pp;}}return best;}
+function nearestOnPath(q){const PS=getPaths();if(!PS.length||!q)return null;let best=null,bd=Infinity;for(const P of PS)for(let i=0;i<P.pts.length-1;i++){const a=P.pts[i],b=P.pts[i+1];const dx=b[0]-a[0],dy=b[1]-a[1];const L2=dx*dx+dy*dy;let t=L2?((q[0]-a[0])*dx+(q[1]-a[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));const pp=[a[0]+t*dx,a[1]+t*dy];const d=dist(pp,q);if(d<bd){bd=d;best=pp;}}return best;}
 /* One straight cross track that crosses two inner legs once each (never the first or last leg, 40+ paces from corners, 20+ from articles),
    whose two ends the cross-track layer can reach from the access path and leave toward it without stepping over any track. */
 function genCross(sh,s,field,obs,pathSegs){
@@ -556,29 +577,43 @@ function optimizeOrder(){const s=state.settings;const used=s.levelOrder.filter(k
   s.levelOrder=best.concat(rest);}
 function generateTracks(){
   const s=state.settings,field=state.map.field;if(!field||field.length<3){toast('יש לסמן קודם את שטח המסלולים על המפה.');return;}
-  const P=getPath();const fe=edgesOf(field);state.geo={};state.trackNo={};state.actuals={};if(s.autoOrder)optimizeOrder();
+  const PS=getPaths();const fe=edgesOf(field);state.geo={};state.trackNo={};state.actuals={};if(s.autoOrder)optimizeOrder();
+  if(!PS.length){toast('לא נמצא מקום לשביל גישה בשטח שסומן. סמנו שביל גישה ידנית.');return;}
   const M=buildModel();M.tracks.forEach(t=>t.geo=null);schedule(M);
   const order=M.tracks.slice().sort((a,b)=>a.start-b.start||a.judge-b.judge);
-  const pathSegs=[];for(let i=0;i<P.pts.length-1;i++)pathSegs.push([P.pts[i],P.pts[i+1]]);
-  const PL=pathLen(P.pts);
-  // which side(s) of the path have field
-  const sides=[1,-1].map(sd=>{let c=0;for(const f of [.2,.4,.6,.8]){const q=pathAt(P.pts,PL*f);const N=[-q.T[1]*sd,q.T[0]*sd];if(inPoly([q.p[0]+N[0]*60,q.p[1]+N[1]*60],field))c++;}return {sd,c};}).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).map(x=>x.sd);
-  if(!sides.length){toast('שביל הגישה לא נמצא לצד שטח המסלולים. סמנו שביל לאורך השטח.');return;}
+  const pathSegs=[];for(const P of PS)for(let i=0;i<P.pts.length-1;i++)pathSegs.push([P.pts[i],P.pts[i+1]]);
+  // slots: each usable side of each path; alternate direction so the judge never walks back to the start
+  const slots=[];for(const P of PS){const PL=pathLen(P.pts);
+    const sides=[1,-1].map(sd=>{let c=0;for(const f of [.2,.4,.6,.8]){const q=pathAt(P.pts,PL*f);const N=[-q.T[1]*sd,q.T[0]*sd];if(inPoly([q.p[0]+N[0]*60,q.p[1]+N[1]*60],field))c++;}return {sd,c};}).filter(x=>x.c>0).sort((a,b)=>b.c-a.c).map(x=>x.sd);
+    for(const sd of sides)slots.push({P,PL,sd,back:slots.length%2===1});}
+  if(!slots.length){toast('שביל הגישה לא נמצא לצד שטח המסלולים. סמנו שביל לאורך השטח.');return;}
   const obs=[];let fails=0,si=0,cur=s.edge+5;
-  // first side runs along the path, the second side comes back the other way, so the judge never walks back to the start
-  function tryAt(t,sd,at,back){const lv=t.lv;for(let a=0;a<25;a++){const sh=laneShape(lv,s);if(!sh)continue;const q=pathAt(P.pts,back?PL-at:at);const N=[-q.T[1]*sd,q.T[0]*sd];const T=back?[-q.T[0],-q.T[1]]:q.T;
+  const rayDepth=(p0,N)=>{let d=0;for(;d<3000;d+=5){if(!inPoly([p0[0]+N[0]*(d+5),p0[1]+N[1]*(d+5)],field))break;}return d;};
+  const failCache=new Set();
+  // paths on both sides share the field between them: never reach past half way to the next path
+  const halfGap=PS.length>1?(dist(PS[0].pts[0],PS[1].pts[0])/2):Infinity;
+  function tryAt(t,sl,at){const lv=t.lv;const P=sl.P,PL=sl.PL,sd=sl.sd,back=sl.back;const q=pathAt(P.pts,back?PL-at:at);const N=[-q.T[1]*sd,q.T[0]*sd];const T=back?[-q.T[0],-q.T[1]]:q.T;
+    const dmax=Math.min(rayDepth(q.p,N),halfGap)-s.edge-3;if(dmax<s.setback+35)return null;
+    // narrow field: widen the legs along the path so the track stays shallow enough
+    for(const lm of [130,220,340]){const key=t.level+'|'+lm+'|'+Math.floor(dmax/25);if(failCache.has(key))continue;
+    for(let a=0;a<12;a++){const sh=laneShape(lv,s,dmax,lm,500);if(!sh){failCache.add(key);break;}
       const w=toWorld(sh,q.p,T,N);if(!fieldOK(w,s,field,fe))continue;const segs=shapeSegs(w);
       if(segs.some(g=>pathSegs.some(e=>segSeg(g[0],g[1],e[0],e[1])<3)))continue;
       if(!clear(segs,bboxOf(w.pts.concat(w.tail)),obs,s.sep,s.crossClear))continue;
       if(lv.cross){const cr=genCross(w,s,field,obs,pathSegs);if(!cr)continue;w.cross=cr;}
-      w.side=sd;w.atS=at;return w;}return null;}
+      w.side=sd;w.atS=at;return w;}}return null;}
   order.forEach((t,i)=>{state.trackNo[t.id]=i+1;let placed=null,psi=si,pc=cur;
-    while(!placed&&psi<sides.length){placed=tryAt(t,sides[psi],pc,psi%2===1);if(!placed){pc+=10;if(pc>PL-20){psi++;pc=s.edge+5;}}}
+    while(!placed&&psi<slots.length){placed=tryAt(t,slots[psi],pc);if(!placed){pc+=10;if(pc>slots[psi].PL-20){psi++;pc=s.edge+5;}}}
     if(placed){si=psi;cur=pc+placed.maxU+s.sep;placed.level=t.level;state.geo[t.id]=placed;obs.push({kind:'track',segs:shapeSegs(placed).map(g=>[g[0],g[1]]),bb:bboxOf(placed.pts.concat(placed.tail))});
       placed.cross.forEach(c=>obs.push({kind:'cross',segs:[[c.a,c.b]],bb:bboxOf([c.a,c.b])}));}
     else fails++;});
-  state.lastGen={at:Date.now(),fails};save();
-  if(fails)toast(fails+' מסלולים לא נכנסו לאורך השביל. הארכו את השביל, הגדילו את השטח או צמצמו נבחנים.');
+  // fit report: what fits, what is missing, and how much more frontage or depth would be needed
+  const byLevel={};for(const t of M.tracks){const b=byLevel[t.level]=byLevel[t.level]||{need:0,placed:0,w:[]};b.need++;const g=state.geo[t.id];if(g){b.placed++;b.w.push(g.maxU);}}
+  let extra=0;const depthNeed={};
+  for(const lk in byLevel){const b=byLevel[lk];const miss=b.need-b.placed;if(miss>0){const fp=footprint(lk);const w=b.w.length?b.w.reduce((a,x)=>a+x,0)/b.w.length:fp.w;extra+=miss*(w+s.sep);if(!b.placed)depthNeed[lk]=Math.round(fp.dMin+s.edge+5);}delete b.w;}
+  let dsum=0,dn=0;for(const sl of slots)for(let f=0.1;f<0.95;f+=0.1){const q=pathAt(sl.P.pts,sl.PL*f);const d=Math.min(rayDepth(q.p,[-q.T[1]*sl.sd,q.T[0]*sl.sd]),halfGap);if(d>20){dsum+=d;dn++;}}
+  state.lastGen={at:Date.now(),fails,byLevel,extra:Math.round(extra),depthNeed,frontage:Math.round(slots.reduce((a,x)=>a+x.PL,0)),paths:PS.length,depth:dn?Math.round(dsum/dn):0,area:Math.round(polyArea(field))};save();
+  if(fails)toast(fails+' מסלולים לא נכנסו בשטח שסומן. הפירוט בלשונית "שטח ומפה".');
 }
 
 /* ===== map ===== */
@@ -602,10 +637,10 @@ function initMap(){
   fitField();mapNote(null);renderMapTools();
 }
 function renderMapTools(){const el=$('#maptools');if(!el)return;const m=state.map;let h='';
-  if(drawMode==='field')h+=`<button class="btn pri" data-act="field-done" type="button">סיים שטח (${drawPts.length})</button><button class="btn" data-act="field-cancel" type="button">בטל</button>`;
+  if(drawMode==='field')h+=`<button class="btn pri" data-act="field-done" type="button">סיים שטח${drawPts.length>2?` · ${Math.round(polyArea(drawPts)/1000)} דונם`:` (${drawPts.length} נקודות)`}</button><button class="btn" data-act="field-cancel" type="button">בטל</button>`;
   else if(drawMode==='path')h+=`<button class="btn pri" data-act="path-done" type="button">סיים שביל (${drawPts.length})</button><button class="btn" data-act="field-cancel" type="button">בטל</button>`;
   else if(drawMode==='base')h+=`<span class="btn">לחצו על נקודת הכינוס</span>`;
-  else{if(m.mode==='satellite')h+=`<button class="btn" data-act="move-here" type="button">הזז את השטח לכאן</button><div class="seg"><button type="button" data-act="layer" data-v="sat" aria-pressed="${state.ui.layer!=='street'}">תצלום אוויר</button><button type="button" data-act="layer" data-v="street" aria-pressed="${state.ui.layer==='street'}">מפה</button></div>`;
+  else{if(m.mode==='satellite')h+=`<div class="seg"><button type="button" data-act="layer" data-v="sat" aria-pressed="${state.ui.layer!=='street'}">תצלום אוויר</button><button type="button" data-act="layer" data-v="street" aria-pressed="${state.ui.layer==='street'}">מפה</button></div>`;
     else if(tilesOK)h+=`<button class="btn pri" data-act="mode" data-v="satellite" type="button">עבור למפה אמיתית</button>`;}
   el.innerHTML=h;}
 function fitField(){if(!map)return;const m=state.map;const f=m.field;let pts=f&&f.length>2?f.concat(m.path||[]):null;if(!pts&&m.mode==='image'&&m.image){const sc=m.image.scale;pts=[[0,0],[m.image.w*sc,m.image.h*sc]];}
@@ -621,8 +656,9 @@ function finishField(){if(drawPts.length>=3){if(state.map.mode==='satellite'){co
     state.map.field=drawPts.slice();state.geo={};state.trackNo={};
     const m=state.map;if(dist(m.base,m.field[0])>3000)m.base=m.field[0].slice();
     if(m.path&&m.path.length&&!m.path.some(q=>inPoly(q,m.field)||m.field.some(f=>dist(f,q)<80)))m.path=[];}
+  {const m=state.map;const P0=getPaths()[0];if(P0&&m.field.length>2&&(dist(m.base,P0.pts[0])>600||(m.base[0]===0&&m.base[1]===0)))m.base=P0.pts[0].slice();}
   drawMode=null;drawPts=[];if(state.map.mode==='satellite'&&state.map.field.length>2){const c=fieldCentroid();state.map.center=[toLL(c).lat,toLL(c).lng];}
-  save();renderPanel();regen();if(state.map.field.length>2&&(!state.map.path||!state.map.path.length))toast('המסלולים הוצבו לאורך שביל אוטומטי בצלע הארוכה. לשביל אחר: "סמן שביל גישה".');}
+  save();renderPanel();regen();if(state.map.field.length>2&&(!state.map.path||!state.map.path.length))toast('המסלולים הוצבו לאורך שביל גישה אוטומטי. אם יש בשטח שביל אמיתי, סמנו אותו ב"סמן שביל גישה".');}
 function finishPath(){if(drawPts.length>=2){state.map.path=drawPts.slice();state.geo={};state.trackNo={};const m=state.map;if(!m.field||m.field.length<3||dist(m.base,m.path[0])>3000)m.base=m.path[0].slice();}
   drawMode=null;drawPts=[];save();renderPanel();regen();}
 function icon(html,cls,size){return L.divIcon({html,className:cls||'',iconSize:size||null});}
@@ -634,11 +670,19 @@ function renderMap(M){
       for(let y=Math.floor(bb[1]/step)*step;y<=bb[3];y+=step)L.polyline([toLL([bb[0],y]),toLL([bb[2],y])],{color:col,weight:y%250===0?1.4:.6,interactive:false}).addTo(lyr);}
     const sx=bb[0]+20,sy=bb[1]+20;L.polyline([toLL([sx,sy]),toLL([sx+100,sy])],{color:'#111',weight:4,interactive:false}).addTo(lyr);L.marker(toLL([sx+50,sy+12]),{icon:icon('<span class="m-lbl">100 מ׳ · צפון למעלה</span>','',[0,0]),interactive:false}).addTo(lyr);}
   if(m.field&&m.field.length>2)L.polygon(m.field.map(toLL),{color:'#de5510',weight:2,fillColor:'#de5510',fillOpacity:m.mode==='schematic'?0.06:0.03,dashArray:'6 5',interactive:false}).addTo(lyr);
-  const PA=getPath();if(PA){const ll=PA.pts.map(toLL);L.polyline(ll,{color:'#fff',weight:9,opacity:.85,interactive:false}).addTo(lyr);L.polyline(ll,{color:'#8a5a1f',weight:5,dashArray:PA.auto?'10 8':null,interactive:false}).addTo(lyr);
-    const mid=pathAt(PA.pts,Math.min(60,pathLen(PA.pts)*0.1));L.marker(toLL(mid.p),{icon:icon('<span class="m-lbl">שביל גישה'+(PA.auto?' (אוטומטי)':'')+'</span>','',[0,0]),interactive:false}).addTo(lyr);}
+  getPaths().forEach((PA,k,arr)=>{const ll=PA.pts.map(toLL);L.polyline(ll,{color:'#fff',weight:9,opacity:.85,interactive:false}).addTo(lyr);L.polyline(ll,{color:'#8a5a1f',weight:5,dashArray:PA.auto?'10 8':null,interactive:false}).addTo(lyr);
+    const mid=pathAt(PA.pts,Math.min(60,pathLen(PA.pts)*0.1));L.marker(toLL(mid.p),{icon:icon('<span class="m-lbl">שביל גישה'+(arr.length>1?' '+(k+1):'')+(PA.auto?' (אוטומטי)':'')+'</span>','',[0,0]),interactive:false}).addTo(lyr);});
+  if((drawMode==='field'||drawMode==='path')&&drawPts.length>1){const segs=[];for(let k=1;k<drawPts.length;k++)segs.push([drawPts[k-1],drawPts[k]]);
+    if(drawMode==='field'&&drawPts.length>2){segs.push([drawPts[drawPts.length-1],drawPts[0]]);L.polyline([toLL(drawPts[drawPts.length-1]),toLL(drawPts[0])],{color:'#de5510',weight:2,dashArray:'4 6',interactive:false}).addTo(lyr);}
+    segs.forEach(([a,b])=>L.marker(toLL([(a[0]+b[0])/2,(a[1]+b[1])/2]),{icon:icon('<span class="m-lbl">'+Math.round(dist(a,b))+' מ׳</span>','',[0,0]),interactive:false}).addTo(lyr));}
   if((drawMode==='field'||drawMode==='path')&&drawPts.length){L.polyline(drawPts.map(toLL),{color:drawMode==='path'?'#8a5a1f':'#de5510',weight:3}).addTo(lyr);drawPts.forEach(p=>L.circleMarker(toLL(p),{radius:4,color:'#de5510'}).addTo(lyr));}
   if(drawMode==='calib'||calibPts.length){calibPts.forEach(p=>L.circleMarker(toLL(p),{radius:5,color:'#111',fillColor:'#fff',fillOpacity:1}).addTo(lyr));if(calibPts.length===2)L.polyline(calibPts.map(toLL),{color:'#111',dashArray:'4 4'}).addTo(lyr);}
   L.marker(toLL(m.base),{icon:icon('<span class="m-base">כינוס</span>','',[0,0]),interactive:false}).addTo(lyr);
+  if(state.ui.tab==='field'&&!drawMode&&m.field&&m.field.length>2){
+    m.field.forEach((q,k)=>{const mk=L.marker(toLL(q),{draggable:true,icon:L.divIcon({className:'m-vtx',iconSize:[14,14]}),title:'גררו כדי להזיז את פינת השטח'}).addTo(lyr);
+      mk.on('dragend',()=>{m.field[k]=fromLL(mk.getLatLng());save();regen();});});
+    (m.path||[]).forEach((q,k)=>{const mk=L.marker(toLL(q),{draggable:true,icon:L.divIcon({className:'m-vtx path',iconSize:[12,12]}),title:'גררו כדי להזיז את השביל'}).addTo(lyr);
+      mk.on('dragend',()=>{m.path[k]=fromLL(mk.getLatLng());save();regen();});});}
   if(!M)return;
   const sel=state.ui.sel;
   for(const t of M.tracks){if(!t.geo)continue;const g=t.geo,col=t.lv.color,isSel=sel===t.id,dim=sel&&!isSel;
@@ -709,16 +753,17 @@ function renderPanel(){
     h+=`<div class="tw"><table><thead><tr><th>מוביל</th><th>כלב</th><th>רמה</th><th></th></tr></thead><tbody>${state.competitors.map(c=>`<tr><td>${esc(c.handler)}</td><td>${esc(c.dog)}</td><td><select data-act="comp-level" data-id="${c.id}" aria-label="רמה">${lvOptions(c.level)}</select></td><td><button class="btn sm ghost" data-act="del-comp" data-id="${c.id}" type="button" aria-label="מחק">✕</button></td></tr>`).join('')}</tbody></table></div>`;
   }
   else if(tab==='field'){
-    const m=state.map;const area=m.field&&m.field.length>2?polyArea(m.field):0;const PA=getPath();
+    const m=state.map;const area=m.field&&m.field.length>2?polyArea(m.field):0;const PSS=getPaths();const PA=PSS.length?{pts:null,auto:PSS[0].auto,len:PSS.reduce((a,x)=>a+pathLen(x.pts),0),n:PSS.length}:null;
     h+=`<div class="box"><h4>סוג מפה</h4><div class="seg" role="group">${[['satellite','מפה אמיתית'],['image','תמונת אוויר'],['schematic','רשת סכמטית']].map(([k,l])=>`<button type="button" data-act="mode" data-v="${k}" aria-pressed="${m.mode===k}">${l}</button>`).join('')}</div>`;
     if(tilesOK===false)h+=`<p class="note" style="color:var(--warn)">התצוגה כאן חוסמת שרתי מפות, לכן המפה האמיתית לא נטענת בה. בקובץ tracking-trial-standalone.html, כשהוא פתוח בדפדפן רגיל או מאתר, המפה האמיתית עובדת. כאן אפשר לעבוד עם תמונת אוויר שתעלו.</p>`;
     if(m.mode==='schematic')h+=`<p class="note">רשת של 50 מ׳ ללא רקע, לתכנון לפני שבחרתם שטח.</p>`;
     if(m.mode==='image')h+=`<p class="note">העלו צילום מסך של השטח מ-govmap או Google Earth, ואז כיילו קנה מידה לפי שתי נקודות שהמרחק ביניהן ידוע.</p><input type="file" id="img-in" accept="image/*"><div class="row"><button class="btn sm" data-act="calib" type="button" ${m.image?'':'disabled'}>כיול קנה מידה</button>${m.image?`<span class="note mono">${m.image.scale.toFixed(3)} מ׳ לפיקסל</span>`:''}</div>${calibPts.length===2?`<div class="row"><label class="fld">המרחק האמיתי בין שתי הנקודות (מ׳)<input type="number" id="calib-d" min="1" step="1" value="100"></label><button class="btn pri sm" data-act="calib-ok" type="button">החל</button><button class="btn sm" data-act="calib-cancel" type="button">בטל</button></div>`:''}${drawMode==='calib'?'<p class="note">לחצו על שתי נקודות במפה.</p>':''}`;
-    if(m.mode==='satellite')h+=`<h4>חיפוש מקום</h4><div class="row"><input id="q-in" placeholder="למשל: מושב בית חלקיה, או 31.84, 34.80" style="flex:1 1 180px"><button class="btn sm" data-act="search" type="button">חפש</button><button class="btn sm" data-act="myloc" type="button">המיקום שלי</button></div><div id="q-res" class="row"></div><p class="note">המסלולים מוצגים על המפה בקנה מידה אמיתי. מצאו את המקום ולחצו "הזז את השטח לכאן" כדי להעביר אליו את כל הפריסה, או סמנו את גבולות השטח האמיתי ואת שביל הגישה, והמסלולים יוצבו בו מחדש.</p>`;
+    if(m.mode==='satellite')h+=`<h4>חיפוש מקום</h4><div class="row"><input id="q-in" placeholder="למשל: מושב בית חלקיה, או 31.84, 34.80" style="flex:1 1 180px"><button class="btn sm" data-act="search" type="button">חפש</button><button class="btn sm" data-act="myloc" type="button">המיקום שלי</button></div><div id="q-res" class="row"></div><p class="note">מצאו את המקום, סמנו את גבולות השטח שבחרתם ואת שביל הגישה, והמסלולים יוצבו בתוכו לפי קנה המידה האמיתי.</p>`;
     h+=`</div><div class="box"><h4>1. שטח המסלולים</h4><div class="row"><button class="btn" data-act="field-draw" type="button">סמן שטח</button><button class="btn" data-act="base" type="button">קבע נקודת כינוס</button></div>
-      <p class="note">לחצו על פינות השטח לפי הסדר. לחיצה כפולה או "סיים" על המפה מסיימת. שטח מסומן: <b class="mono">${(area/1000).toFixed(0)}</b> דונם${M?` · נדרש בערך <b class="mono">${estimateNeed(M)}</b> דונם`:''}</p></div>
+      <p class="note">לחצו על פינות השטח לפי הסדר; אורך כל צלע מוצג על המפה. לחיצה כפולה או "סיים" מסיימת. אחר כך אפשר לגרור כל פינה, והמסלולים מוצבים מחדש.</p>
+      ${fitBox(M,area)}</div>
       <div class="box"><h4>2. שביל גישה</h4><div class="row"><button class="btn" data-act="path-draw" type="button">סמן שביל גישה</button>${m.path&&m.path.length?'<button class="btn sm" data-act="path-clear" type="button">חזור לשביל אוטומטי</button>':''}</div>
-      <p class="note">${PA?`אורך השביל <b class="mono">${Math.round(pathLen(PA.pts))}</b> מ׳${PA.auto?' (אוטומטי, לאורך הצלע הארוכה של השטח)':''}. `:''}המסלולים מסודרים לאורך השביל זה לצד זה, לפי סדר ההנחה: כל מסלול נכנס מהשביל, מתקדם לתוך השטח ויוצא בחזרה לכיוון השביל, והבא אחריו מתחיל ${s.sep} מ׳ אחרי היציאה. אם יש שטח משני צדי השביל, ממלאים צד אחד ואז את השני.</p></div>
+      <p class="note">${PA?`${PA.n>1?PA.n+' שבילים, אורך כולל':'אורך השביל'} <b class="mono">${Math.round(PA.len)}</b> מ׳${PA.auto?' (אוטומטי, במקביל לצלע הארוכה; בשטח עמוק השביל עובר באמצע או שיש כמה שבילים, עם מסלולים משני הצדדים)':''}. `:''}המסלולים מסודרים לאורך השביל זה לצד זה, לפי סדר ההנחה: כל מסלול נכנס מהשביל, מתקדם לתוך השטח ויוצא בחזרה לכיוון השביל, והבא אחריו מתחיל ${s.sep} מ׳ אחרי היציאה. אם יש שטח משני צדי השביל, ממלאים צד אחד ואז את השני.</p></div>
       <div class="box"><h4>3. הצבה</h4><div class="row"><button class="btn pri" data-act="gen" type="button">צור מסלולים מחדש</button><label class="row note"><input type="checkbox" data-act="routes" ${state.ui.showRoutes?'checked':''}> הצג את כל נתיבי ההליכה</label></div>
       ${M?`<p class="note">${M.tracks.filter(t=>t.geo).length} מתוך ${M.tracks.length} מסלולים ממוקמים.</p>`:''}
       <p class="note">מרווח של ${s.sep} מ׳ לפחות בין כל חלקי המסלולים, ${s.setback} מ׳ בין השביל לדגל ההתחלה, ${s.edge} מ׳ מגבול השטח ו-${s.intraSep} מ׳ בין רגליים לא סמוכות של אותו מסלול.</p></div>`;
@@ -764,7 +809,21 @@ function renderPanel(){
   }
   b.innerHTML=h;
 }
-function estimateNeed(M){let a=0;const s=state.settings;for(const t of M.tracks){const g=t.geo;let w,hgt;if(g){const bb=bboxOf(g.pts);w=bb[2]-bb[0];hgt=bb[3]-bb[1];}else{const side=t.lv.paces*s.pace/ (t.lv.legs>3?3.2:2.2);w=hgt=side;}a+=(w+s.sep)*(hgt+s.sep)*0.75;}return Math.round(a/1000);}
+function fitBox(M,area){if(!M||!M.tracks.length)return '';const N=needOf(M);const G=state.lastGen;const m=state.map;const has=m.field&&m.field.length>2;
+  let h=`<div class="box" style="background:var(--surface)"><h4>התאמת השטח לנבחנים</h4>`;
+  h+=`<p class="note">ל-${M.tracks.length} הנבחנים צריך בערך <b class="mono">${N.dunam}</b> דונם: חזית של כ-<b class="mono">${N.front}</b> מ׳ לאורך שביל הגישה (או חצי מזה אם יש שטח משני צדי השביל), ועומק של כ-<b class="mono">${N.depth}</b> מ׳ מהשביל.</p>`;
+  if(!has){return h+`<p class="note">עוד לא סומן שטח.</p></div>`;}
+  h+=`<p class="note">השטח שסומן: <b class="mono">${Math.round(area/1000)}</b> דונם${G&&G.frontage?` · חזית <b class="mono">${G.frontage}</b> מ׳ · עומק ממוצע <b class="mono">${G.depth}</b> מ׳`:''}.</p>`;
+  if(G&&G.byLevel){const rows=Object.entries(G.byLevel).map(([k,b])=>`<tr><td>${lvTag(k)}</td><td class="num">${b.placed} / ${b.need}</td><td>${b.placed===b.need?'<span class="pill ok">נכנס</span>':`<span class="pill bad">חסרים ${b.need-b.placed}</span>`}</td></tr>`).join('');
+    h+=`<div class="tw"><table><thead><tr><th>רמה</th><th>נכנסו</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    if(G.fails){h+=`<p class="note" style="color:var(--bad)">${G.fails} מסלולים לא נכנסו. כדי להכניס אותם צריך עוד כ-<b class="mono">${G.extra}</b> מ׳ של חזית לאורך השביל, או שטח גם בצד השני של השביל.</p>`;
+      const shallow=Object.entries(G.depthNeed||{}).filter(([k,d])=>!G.depth||d>G.depth*0.9);
+      if(shallow.length)h+=`<p class="note" style="color:var(--bad)">השטח רדוד מדי ל-${shallow.map(([k,d])=>`${LEVELS[k].short} (צריך כ-${d} מ׳)`).join(', ')}. העומק הממוצע מהשביל כאן ${G.depth} מ׳; בחרו שטח עמוק יותר או סמנו את השביל בצד אחר של השטח.</p>`;}
+    else h+=`<p class="note" style="color:var(--ok)">כל המסלולים נכנסו בשטח שסומן.</p>`;}
+  return h+`</div>`;}
+function needOf(M){const s=state.settings;let area=0,front=0,depth=0;for(const t of M.tracks){const fp=footprint(t.level);area+=(fp.w+s.sep)*(fp.d+s.setback+s.edge);front+=fp.w+s.sep;depth=Math.max(depth,fp.d+s.setback+s.edge);}
+  return {dunam:Math.round(area/1000),front:Math.round(front),depth:Math.round(depth)};}
+function estimateNeed(M){return needOf(M).dunam;}
 function events(M){if(!M)return [];const ev=[];
   for(const t of M.tracks){const nm=compName(t);ev.push({t:t.layStart,txt:`${lvTag(t.level)} הנחת מסלול ${t.no}`,who:t.pool==='own'?(t.comp?t.comp.handler:'מוביל מקום '+(t.slot+1)):'מניח '+(t.res+1),kind:'lay'});
     (t.crossT||[]).forEach((c,i)=>{if(!c.done)ev.push({t:c.s,txt:`עקבה חוצה למסלול ${t.no}`,who:'מניח חוצות '+((t.crossRes||0)+1),kind:'cross'});});
@@ -824,7 +883,7 @@ const strip=h=>h.replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&quot;/g,
 
 /* ===== events ===== */
 document.addEventListener('click',async e=>{const el=e.target.closest('[data-act],[data-tab]');if(!el)return;
-  if(el.dataset.tab){state.ui.tab=el.dataset.tab;renderTabs();renderPanel();save();return;}
+  if(el.dataset.tab){state.ui.tab=el.dataset.tab;renderTabs();renderPanel();renderMap(lastM);save();return;}
   const a=el.dataset.act,id=el.dataset.id,s=state.settings;
   switch(a){
     case 'zoom':state.ui.zoom=Math.max(.8,Math.min(8,state.ui.zoom*(el.dataset.v==='1'?1.3:1/1.3)));renderGantt(lastM);save();break;
@@ -882,11 +941,16 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-act
 /* field, path and tracks are stored in metres, so the same layout can be shown on the grid or on the real map at true scale */
 function fieldCentroid(){const f=state.map.field;return [f.reduce((a,q)=>a+q[0],0)/f.length,f.reduce((a,q)=>a+q[1],0)/f.length];}
 function anchorAt(ll){const m=state.map;if(!m.field||m.field.length<3){m.origin=ll;m.center=ll;return;}const c=fieldCentroid();m.origin=[ll[0]-c[1]/111320,ll[1]-c[0]/(111320*Math.cos(ll[0]*D))];m.center=ll;}
-function confirmSwap(prev){const m=state.map;let fresh=false;
-  if(m.mode==='image'){m.field=[];m.path=[];m.base=[0,0];state.geo={};state.trackNo={};if(!m.image)toast('העלו תמונת אוויר של השטח בלשונית "שטח ומפה".');return false;}
-  if(prev==='image'||!m.field||m.field.length<3){const d=defaultState().map;m.field=d.field;m.path=d.path;m.base=d.base;fresh=true;}
-  if(m.mode==='satellite'){anchorAt(m.center||m.origin);toast('המסלולים מוצגים בקנה מידה אמיתי. חפשו את המקום ולחצו "הזז את השטח לכאן", או סמנו את גבולות השטח האמיתי.');}
-  return fresh;}
+/* each map type keeps its own field, so the grid demo never leaks onto the real map */
+function confirmSwap(prev){const m=state.map;m.layouts=m.layouts||{};
+  m.layouts[prev]={field:m.field,path:m.path,base:m.base,origin:m.origin,center:m.center};
+  const L0=m.layouts[m.mode];state.geo={};state.trackNo={};state.lastGen=null;
+  if(L0&&L0.field&&L0.field.length>2){m.field=L0.field;m.path=L0.path||[];m.base=L0.base;if(L0.origin)m.origin=L0.origin;m.center=L0.center;return true;}
+  if(m.mode==='schematic'){const d=defaultState().map;m.field=d.field;m.path=d.path;m.base=d.base;return true;}
+  m.field=[];m.path=[];m.base=[0,0];
+  if(m.mode==='satellite')toast('חפשו את המקום או לחצו "המיקום שלי", ואז "סמן שטח" ולחצו על פינות השטח שבחרתם.');
+  if(m.mode==='image'&&!m.image)toast('העלו תמונת אוויר של השטח בלשונית "שטח ומפה".');
+  return false;}
 document.addEventListener('change',e=>{const el=e.target;const s=state.settings;
   if(el.id==='s-date'){s.date=el.value||todayISO();save();recompute();return;}
   if(el.id==='s-start'){s.start=el.value||'07:00';save();recompute();return;}
