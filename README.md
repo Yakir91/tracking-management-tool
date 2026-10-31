@@ -1,4 +1,4 @@
-# Tracking Trail Management tool
+# Tracking Management Tool
 
 A single-page web tool for planning and running FCI-IGP tracking trials and championships: FPr 1–3 (tracking phase of IGP 1–3) and FH 1–3 (FCI-IFH 1–3). The interface is in Hebrew.
 

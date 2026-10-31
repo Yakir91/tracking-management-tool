@@ -243,7 +243,7 @@ const LEVELS={
  IFH3:{code:'IFH3',short:'FH 3',heb:'כלב גישוש 3',eq:'FCI-IFH 3 / IGP-FH',own:false,paces:1800,legs:8,acute:2,semi:true,articles:7,aging:180,work:45,cross:2,phases:3,est:28,leash:10,color:'#9a1fa6',art:'ifh'}
 };
 const LKEYS=Object.keys(LEVELS);
-const STORE='tracking-trial-manager-v4';
+const STORE='tracking-trial-manager-v5';
 
 /* ===== small utils ===== */
 const $=(s,r=document)=>r.querySelector(s);
@@ -605,7 +605,7 @@ function renderMapTools(){const el=$('#maptools');if(!el)return;const m=state.ma
   if(drawMode==='field')h+=`<button class="btn pri" data-act="field-done" type="button">סיים שטח (${drawPts.length})</button><button class="btn" data-act="field-cancel" type="button">בטל</button>`;
   else if(drawMode==='path')h+=`<button class="btn pri" data-act="path-done" type="button">סיים שביל (${drawPts.length})</button><button class="btn" data-act="field-cancel" type="button">בטל</button>`;
   else if(drawMode==='base')h+=`<span class="btn">לחצו על נקודת הכינוס</span>`;
-  else{if(m.mode==='satellite')h+=`<div class="seg"><button type="button" data-act="layer" data-v="sat" aria-pressed="${state.ui.layer!=='street'}">תצלום אוויר</button><button type="button" data-act="layer" data-v="street" aria-pressed="${state.ui.layer==='street'}">מפה</button></div>`;
+  else{if(m.mode==='satellite')h+=`<button class="btn" data-act="move-here" type="button">הזז את השטח לכאן</button><div class="seg"><button type="button" data-act="layer" data-v="sat" aria-pressed="${state.ui.layer!=='street'}">תצלום אוויר</button><button type="button" data-act="layer" data-v="street" aria-pressed="${state.ui.layer==='street'}">מפה</button></div>`;
     else if(tilesOK)h+=`<button class="btn pri" data-act="mode" data-v="satellite" type="button">עבור למפה אמיתית</button>`;}
   el.innerHTML=h;}
 function fitField(){if(!map)return;const m=state.map;const f=m.field;let pts=f&&f.length>2?f.concat(m.path||[]):null;if(!pts&&m.mode==='image'&&m.image){const sc=m.image.scale;pts=[[0,0],[m.image.w*sc,m.image.h*sc]];}
@@ -621,9 +621,10 @@ function finishField(){if(drawPts.length>=3){if(state.map.mode==='satellite'){co
     state.map.field=drawPts.slice();state.geo={};state.trackNo={};
     const m=state.map;if(dist(m.base,m.field[0])>3000)m.base=m.field[0].slice();
     if(m.path&&m.path.length&&!m.path.some(q=>inPoly(q,m.field)||m.field.some(f=>dist(f,q)<80)))m.path=[];}
-  drawMode=null;drawPts=[];save();recompute();renderPanel();if(state.map.field.length>2&&(!state.map.path||!state.map.path.length))toast('עכשיו סמנו את שביל הגישה לאורך השטח, או השתמשו בשביל האוטומטי לאורך הצלע הארוכה.');}
+  drawMode=null;drawPts=[];if(state.map.mode==='satellite'&&state.map.field.length>2){const c=fieldCentroid();state.map.center=[toLL(c).lat,toLL(c).lng];}
+  save();renderPanel();regen();if(state.map.field.length>2&&(!state.map.path||!state.map.path.length))toast('המסלולים הוצבו לאורך שביל אוטומטי בצלע הארוכה. לשביל אחר: "סמן שביל גישה".');}
 function finishPath(){if(drawPts.length>=2){state.map.path=drawPts.slice();state.geo={};state.trackNo={};const m=state.map;if(!m.field||m.field.length<3||dist(m.base,m.path[0])>3000)m.base=m.path[0].slice();}
-  drawMode=null;drawPts=[];save();recompute();renderPanel();}
+  drawMode=null;drawPts=[];save();renderPanel();regen();}
 function icon(html,cls,size){return L.divIcon({html,className:cls||'',iconSize:size||null});}
 function renderMap(M){
   if(!map||!lyr)return;lyr.clearLayers();const s=state.settings,m=state.map;
@@ -713,7 +714,7 @@ function renderPanel(){
     if(tilesOK===false)h+=`<p class="note" style="color:var(--warn)">התצוגה כאן חוסמת שרתי מפות, לכן המפה האמיתית לא נטענת בה. בקובץ tracking-trial-standalone.html, כשהוא פתוח בדפדפן רגיל או מאתר, המפה האמיתית עובדת. כאן אפשר לעבוד עם תמונת אוויר שתעלו.</p>`;
     if(m.mode==='schematic')h+=`<p class="note">רשת של 50 מ׳ ללא רקע, לתכנון לפני שבחרתם שטח.</p>`;
     if(m.mode==='image')h+=`<p class="note">העלו צילום מסך של השטח מ-govmap או Google Earth, ואז כיילו קנה מידה לפי שתי נקודות שהמרחק ביניהן ידוע.</p><input type="file" id="img-in" accept="image/*"><div class="row"><button class="btn sm" data-act="calib" type="button" ${m.image?'':'disabled'}>כיול קנה מידה</button>${m.image?`<span class="note mono">${m.image.scale.toFixed(3)} מ׳ לפיקסל</span>`:''}</div>${calibPts.length===2?`<div class="row"><label class="fld">המרחק האמיתי בין שתי הנקודות (מ׳)<input type="number" id="calib-d" min="1" step="1" value="100"></label><button class="btn pri sm" data-act="calib-ok" type="button">החל</button><button class="btn sm" data-act="calib-cancel" type="button">בטל</button></div>`:''}${drawMode==='calib'?'<p class="note">לחצו על שתי נקודות במפה.</p>':''}`;
-    if(m.mode==='satellite')h+=`<h4>חיפוש מקום</h4><div class="row"><input id="q-in" placeholder="למשל: מושב בית חלקיה, או 31.84, 34.80" style="flex:1 1 180px"><button class="btn sm" data-act="search" type="button">חפש</button><button class="btn sm" data-act="myloc" type="button">המיקום שלי</button></div><div id="q-res" class="row"></div><p class="note">מצאו את השטח, עברו בין תצלום אוויר למפה בכפתור שעל המפה, וסמנו את גבולות השטח ואת שביל הגישה.</p>`;
+    if(m.mode==='satellite')h+=`<h4>חיפוש מקום</h4><div class="row"><input id="q-in" placeholder="למשל: מושב בית חלקיה, או 31.84, 34.80" style="flex:1 1 180px"><button class="btn sm" data-act="search" type="button">חפש</button><button class="btn sm" data-act="myloc" type="button">המיקום שלי</button></div><div id="q-res" class="row"></div><p class="note">המסלולים מוצגים על המפה בקנה מידה אמיתי. מצאו את המקום ולחצו "הזז את השטח לכאן" כדי להעביר אליו את כל הפריסה, או סמנו את גבולות השטח האמיתי ואת שביל הגישה, והמסלולים יוצבו בו מחדש.</p>`;
     h+=`</div><div class="box"><h4>1. שטח המסלולים</h4><div class="row"><button class="btn" data-act="field-draw" type="button">סמן שטח</button><button class="btn" data-act="base" type="button">קבע נקודת כינוס</button></div>
       <p class="note">לחצו על פינות השטח לפי הסדר. לחיצה כפולה או "סיים" על המפה מסיימת. שטח מסומן: <b class="mono">${(area/1000).toFixed(0)}</b> דונם${M?` · נדרש בערך <b class="mono">${estimateNeed(M)}</b> דונם`:''}</p></div>
       <div class="box"><h4>2. שביל גישה</h4><div class="row"><button class="btn" data-act="path-draw" type="button">סמן שביל גישה</button>${m.path&&m.path.length?'<button class="btn sm" data-act="path-clear" type="button">חזור לשביל אוטומטי</button>':''}</div>
@@ -834,7 +835,8 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-act
       $('#c-bulk').value.split('\n').map(x=>x.trim()).filter(Boolean).forEach(line=>{const p=line.split(/[,\t;]/).map(x=>x.trim());const code=(p[2]||'').toUpperCase().replace(/[\s\-]/g,'');const l=map2[code];if(!l){bad++;return;}state.competitors.push({id:uid(),handler:p[0]||'',dog:p[1]||'',level:l});n++;});
       save();regen();toast(`נוספו ${n} נבחנים${bad?`, ${bad} שורות לא זוהו (בדקו את שם הרמה)`:''}.`);break;}
     case 'del-comp':state.competitors=state.competitors.filter(c=>c.id!==id);save();regen();break;
-    case 'mode':if(state.map.mode!==el.dataset.v){state.map.mode=el.dataset.v;confirmSwap();save();initMap();recompute();if(el.dataset.v==='satellite'){state.ui.tab='field';renderTabs();renderPanel();}}break;
+    case 'mode':if(state.map.mode!==el.dataset.v){const prev=state.map.mode;state.map.mode=el.dataset.v;const fresh=confirmSwap(prev);save();initMap();if(fresh)regen();else recompute();if(el.dataset.v==='satellite'){state.ui.tab='field';renderTabs();renderPanel();}}break;
+    case 'move-here':{const c=map.getCenter();anchorAt([c.lat,c.lng]);save();recompute();fitField();toast('השטח והמסלולים הוזזו לכאן בקנה מידה אמיתי. כדי להתאים לשטח האמיתי, סמנו את גבולות השטח מחדש.');break;}
     case 'field-draw':drawMode='field';drawPts=[];renderPanel();renderMap(lastM);renderMapTools();break;
     case 'path-draw':drawMode='path';drawPts=[];renderPanel();renderMap(lastM);renderMapTools();break;
     case 'path-done':finishPath();break;
@@ -877,10 +879,14 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-act
     case 'reset':if(el.dataset.armed){state=defaultState();save();initMap();generateTracks();recompute();}else{el.dataset.armed='1';el.textContent='לחצו שוב לאישור';setTimeout(()=>{if(el.isConnected){delete el.dataset.armed;el.textContent='התחל מאפס';}},4000);}break;
   }
 });
-function confirmSwap(){const m=state.map;m.field=[];m.path=[];state.geo={};state.trackNo={};
-  if(m.mode==='satellite'){m.base=[0,0];toast('חפשו את המקום, סמנו את שטח המסלולים ואת שביל הגישה, ולחצו "צור מסלולים".');}
-  if(m.mode==='image'){m.base=[0,0];if(!m.image)toast('העלו תמונת אוויר של השטח בלשונית "שטח ומפה".');}
-  if(m.mode==='schematic'){const d=defaultState().map;m.field=d.field;m.path=d.path;m.base=d.base;}return true;}
+/* field, path and tracks are stored in metres, so the same layout can be shown on the grid or on the real map at true scale */
+function fieldCentroid(){const f=state.map.field;return [f.reduce((a,q)=>a+q[0],0)/f.length,f.reduce((a,q)=>a+q[1],0)/f.length];}
+function anchorAt(ll){const m=state.map;if(!m.field||m.field.length<3){m.origin=ll;m.center=ll;return;}const c=fieldCentroid();m.origin=[ll[0]-c[1]/111320,ll[1]-c[0]/(111320*Math.cos(ll[0]*D))];m.center=ll;}
+function confirmSwap(prev){const m=state.map;let fresh=false;
+  if(m.mode==='image'){m.field=[];m.path=[];m.base=[0,0];state.geo={};state.trackNo={};if(!m.image)toast('העלו תמונת אוויר של השטח בלשונית "שטח ומפה".');return false;}
+  if(prev==='image'||!m.field||m.field.length<3){const d=defaultState().map;m.field=d.field;m.path=d.path;m.base=d.base;fresh=true;}
+  if(m.mode==='satellite'){anchorAt(m.center||m.origin);toast('המסלולים מוצגים בקנה מידה אמיתי. חפשו את המקום ולחצו "הזז את השטח לכאן", או סמנו את גבולות השטח האמיתי.');}
+  return fresh;}
 document.addEventListener('change',e=>{const el=e.target;const s=state.settings;
   if(el.id==='s-date'){s.date=el.value||todayISO();save();recompute();return;}
   if(el.id==='s-start'){s.start=el.value||'07:00';save();recompute();return;}
