@@ -96,19 +96,29 @@ td.num,.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-s
 .gantt-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
 .gantt-head{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap}
 .gantt-head h2{font-family:var(--f-display);font-weight:400;font-size:1.05rem;margin:0}
-.gantt{overflow:auto;max-height:520px;direction:ltr;position:relative}
-.g-row{display:flex;height:26px;align-items:center;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);cursor:pointer}
+/* timeline: labels in a fixed column on the right, bars scroll sideways in their own column, so no bar is ever hidden under a label */
+.gantt{display:grid;grid-template-columns:minmax(0,1fr) 230px;direction:ltr}
+.g-scroll{overflow-x:auto;min-width:0;border-right:1px solid var(--line)}
+.g-inner{position:relative}
+.g-labels{direction:rtl;min-width:0}
+.g-row{height:28px;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);cursor:pointer;position:relative}
 .g-row:hover{background:var(--surface-2)}
 .g-row.sel{background:var(--accent-soft)}
-.g-bars{position:relative;height:100%;flex:none}
-.g-lab{position:sticky;right:0;flex:none;width:210px;margin-left:auto;background:var(--surface);direction:rtl;padding:0 8px;font-size:.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:100%;display:flex;align-items:center;gap:6px;border-left:1px solid var(--line);z-index:2}
-.g-row:hover .g-lab{background:var(--surface-2)}
-.g-row.sel .g-lab{background:var(--accent-soft)}
-.g-axis{display:flex;position:sticky;top:0;z-index:3;background:var(--surface);height:24px;border-bottom:1px solid var(--line)}
-.g-axis .g-lab{font-weight:600;color:var(--muted)}
-.tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);font-family:var(--f-mono);font-size:.68rem;color:var(--muted);padding-left:3px;line-height:24px}
+.g-lab{display:flex;align-items:center;gap:6px;padding:0 10px;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-lab .who{color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.g-axis{height:26px;border-bottom:1px solid var(--line);position:relative;background:var(--surface)}
+.g-axis.g-lab{font-weight:600;color:var(--muted);font-size:.75rem}
+.ctrl{border-top:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.ctrl .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.ctrl .hd b{font-family:var(--f-display);font-weight:400;font-size:1.05rem}
+.ctrl table td,.ctrl table th{vertical-align:middle}
+.ctrl .act{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ctrl input[type=time]{padding:3px 6px;font-size:.85rem;width:7.5em}
+.ctrl .lbl{font-size:.75rem;color:var(--muted)}
+.ctrl .warn{color:var(--warn);font-size:.8rem}
+.tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);font-family:var(--f-mono);font-size:.68rem;color:var(--muted);padding-left:3px;line-height:26px}
 .gl{position:absolute;top:0;bottom:0;border-left:1px dashed color-mix(in srgb,var(--line) 70%,transparent)}
-.bar{position:absolute;top:6px;height:14px;border-radius:3px}
+.bar{position:absolute;top:7px;height:14px;border-radius:3px}
 .bar.lay{opacity:.95}
 .bar.age{height:4px;top:11px;opacity:.55}
 .bar.jud{top:4px;height:18px;border:1.5px solid var(--ink)}
@@ -218,12 +228,13 @@ textarea{width:100%;min-height:90px;resize:vertical;font-family:var(--f-mono);fo
       <div class="gantt-wrap">
         <div class="gantt-head"><h2>ציר זמן לפי מסלול</h2>
           <div class="row">
-            <span class="note">פס מלא: הנחה · קו דק: השהייה · מסגרת: עבודת הכלב · קו שחור: עקבה חוצה</span>
+            <span class="note">פס מלא: הנחת המסלול · קו דק: השהייה · מסגרת: עבודת הכלב · קו שחור: עקבה חוצה. לחצו על מסלול כדי לעדכן זמנים.</span>
             <button class="btn sm" data-act="zoom" data-v="-1" type="button" aria-label="הקטן ציר זמן">−</button>
             <button class="btn sm" data-act="zoom" data-v="1" type="button" aria-label="הגדל ציר זמן">+</button>
           </div>
         </div>
         <div class="gantt" id="gantt"></div>
+        <div class="ctrl" id="ctrl" hidden></div>
       </div>
     </section>
   </div>
@@ -284,12 +295,12 @@ function defaultState(){
     settings:{date:todayISO(),start:'07:00',layers:2,crossLayers:1,ownParallel:1,judges:1,pace:0.8,layRate:70,walkKmh:4.5,detour:1.3,changeover:4,drawBuf:5,sep:22,intraSep:25,edge:8,walkBuf:7,crossLen:100,crossExt:25,crossClear:15,semiR:30,setback:12,groupSize:0,autoOrder:true,est,aging,levelOrder:LKEYS.slice()},
     competitors:demo.map(([h,d,l])=>({id:uid(),handler:h,dog:d,level:l,example:true})),
     map:{mode:'schematic',fields:[[[0,0],[1300,-20],[1330,900],[650,960],[-20,880]]],paths:[[[0,440],[1325,450]]],base:[-45,440],origin:[31.62,34.83],image:null},
-    draws:{},geo:{},trackNo:{},actuals:{},judgeOverride:{},live:false,ui:{tab:'comp',zoom:2.2,sel:null,showRoutes:false,layer:'sat'}
+    draws:{},geo:{},trackNo:{},actuals:{},judgeOverride:{},pins:{},live:false,ui:{tab:'comp',zoom:2.2,sel:null,showRoutes:false,layer:'sat'}
   };
 }
 let state=load()||defaultState();
 let imgVolatile=null;
-function load(){try{const s=JSON.parse(localStorage.getItem(STORE)||'null');if(!s||!s.settings)return null;const d=defaultState();s.settings=Object.assign(d.settings,s.settings);s.settings.est=Object.assign(d.settings.est,s.settings.est);s.settings.aging=Object.assign(d.settings.aging,s.settings.aging);s.ui=Object.assign(d.ui,s.ui||{});['draws','geo','trackNo','actuals','judgeOverride'].forEach(k=>s[k]=s[k]||{});return s;}catch(e){return null;}}
+function load(){try{const s=JSON.parse(localStorage.getItem(STORE)||'null');if(!s||!s.settings)return null;const d=defaultState();s.settings=Object.assign(d.settings,s.settings);s.settings.est=Object.assign(d.settings.est,s.settings.est);s.settings.aging=Object.assign(d.settings.aging,s.settings.aging);s.ui=Object.assign(d.ui,s.ui||{});['draws','geo','trackNo','actuals','judgeOverride','pins'].forEach(k=>s[k]=s[k]||{});return s;}catch(e){return null;}}
 let saveNote='';
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state));saveNote='';}catch(e){try{const c=JSON.parse(JSON.stringify(state));if(c.map.image){imgVolatile=c.map.image.url;c.map.image.url=null;}localStorage.setItem(STORE,JSON.stringify(c));saveNote='תמונת האוויר גדולה מדי לשמירה בדפדפן, ויש להעלות אותה שוב בפתיחה הבאה.';}catch(e2){saveNote='השמירה בדפדפן נכשלה. השתמשו בגיבוי בלשונית ההגדרות.';}}}
 
@@ -458,10 +469,10 @@ function buildModel(){
       const id=lk+'-'+(g+1);const sig=members.slice().sort().join(',');let draw=state.draws[id];if(draw&&draw.sig!==sig)draw=null;
       const grp={id,level:lk,lv:LEVELS[lk],members,sig,draw,index:g,count:k,tracks:[],order:groups.length};groups.push(grp);
       for(let sl=0;sl<size;sl++){const tid=id+'#'+(sl+1);
-        const comp=own?byId(members[sl]):(draw?byId(draw.order[sl]):null);
+        const comp=(own||size===1)?byId(members[sl]):(draw?byId(draw.order[sl]):null);
         const t={id:tid,group:grp,level:lk,lv:LEVELS[lk],slot:sl,comp,geo:state.geo[tid]||null,act:state.actuals[tid]||{},no:state.trackNo[tid]};grp.tracks.push(t);tracks.push(t);}
       // stranger tracks are worked in laying order; own tracks belong to their handler, so the draw sets the working order
-      grp.seq=grp.tracks.slice();grp.noDraw=own;}}
+      grp.seq=grp.tracks.slice();grp.noDraw=own||size===1;grp.single=!own&&size===1;}}
   const J=Math.max(1,s.judges),load=Array(J).fill(0);
   for(const g of groups){let j=state.judgeOverride[g.id];if(j==null||j>=J)j=load.indexOf(Math.min(...load));g.judge=j;load[j]+=g.tracks.length*(s.est[g.level]+s.changeover);}
   let nx=Math.max(0,...tracks.map(t=>t.no||0));tracks.forEach(t=>{if(!t.no)t.no=++nx;});
@@ -486,7 +497,8 @@ function schedule(M){
     const J=Math.max(1,s.judges);const seq=[];for(let j=0;j<J;j++)seq.push(M.groups.filter(g=>g.judge===j).flatMap(g=>g.seq));
     const jf=Array(J).fill(T0),jl=Array(J).fill(null),ptr=Array(J).fill(0);
     const CL=Array.from({length:Math.max(1,s.crossLayers)},()=>({t:START,loc:base}));
-    const cand=(t,j)=>{if(t.act.js!=null)return t.act.js;const g=t.group;let e=jf[j]+(jl[j]?s.changeover+W(jl[j],t.S):0);e=Math.max(e,t.layEnd+t.aging,NOW,T0);
+    const cand=(t,j)=>{if(t.act.js!=null)return t.act.js;const g=t.group;const pn=(state.pins||{})[t.id];if(pn!=null)return Math.max(pn,cand0(t,j));return cand0(t,j);};
+    const cand0=(t,j)=>{const g=t.group;let e=jf[j]+(jl[j]?s.changeover+W(jl[j],t.S):0);e=Math.max(e,t.layEnd+t.aging,NOW,T0);
       if(t===g.seq[0])e=Math.max(e,g.gate);if(g.blind)e=Math.max(e,g.layMax+t.aging);return e;};
     for(;;){let bj=-1,be=Infinity;for(let j=0;j<J;j++){if(ptr[j]>=seq[j].length)continue;const e=cand(seq[j][ptr[j]],j);if(e<be){be=e;bj=j;}}if(bj<0)break;
       const t=seq[bj][ptr[bj]++];let e=be;t.judge=bj;t.crossT=null;
@@ -789,7 +801,7 @@ function renderPanel(){
     h+=`<p class="note">במסלולים עצמיים (FPr 1, FH 1) אין הגרלה. במסלולי מניח זר, מסלולי הקבוצה מונחים בזה אחר זה, כל מסלול סמוך ככל האפשר לזמן היציאה של הכלב שלו, וההגרלה נערכת מיד אחרי שהמסלול האחרון בקבוצה הונח. בגלל שההגרלה באה אחרי כל ההנחות, המסלול הראשון בקבוצה ממתין יותר מהמינימום, ולכן קבוצה קטנה יותר מקצרת את ההמתנה.</p>`;
     h+=`<div class="row"><span class="note">גודל קבוצה</span><div class="seg">${[[0,'אוטומטי'],[3,'3'],[6,'6']].map(([n,l])=>`<button type="button" data-act="gsize" data-v="${n}" aria-pressed="${s.groupSize===n}">${l}</button>`).join('')}</div></div>
       ${s.groupSize?'':`<p class="note">אוטומטי: 6 רק ברמה שבה ההשהייה ארוכה מספיק כדי לשפוט 5 כלבים בזמן הנחת הקבוצה, אחרת 3. כרגע: ${LKEYS.filter(k=>!LEVELS[k].own&&state.competitors.some(c=>c.level===k)).map(k=>LEVELS[k].short+' '+groupSizeFor(k)).join(' · ')}</p>`}`;
-    for(const g of (M?M.groups.filter(g=>g.noDraw):[])){h+=`<div class="box"><b>${lvTag(g.level)} מסלול עצמי, ללא הגרלה</b><p class="note">כל מוביל מניח את המסלול שלו בזמן שנקבע לו, ויוצא לפי סדר ההנחה.</p>
+    for(const g of (M?M.groups.filter(g=>g.noDraw):[])){h+=`<div class="box"><b>${lvTag(g.level)} ${g.single?'נבחן יחיד, ללא הגרלה':'מסלול עצמי, ללא הגרלה'}</b><p class="note">${g.single?'בקבוצה יש נבחן אחד, ולכן אין צורך בהגרלה.':'כל מוביל מניח את המסלול שלו בזמן שנקבע לו, ויוצא לפי סדר ההנחה.'}</p>
       <div class="tw"><table><thead><tr><th>מסלול</th><th>הנחה</th><th>יציאה</th><th>מוביל</th></tr></thead><tbody>${g.seq.map(t=>`<tr><td class="num">${t.no}</td><td class="num">${fmt(t.layStart)}</td><td class="num">${fmt(t.start)}</td><td>${t.comp?esc(t.comp.handler)+' · '+esc(t.comp.dog):''}</td></tr>`).join('')}</tbody></table></div></div>`;}
     for(const g of (M?M.groups.filter(g=>!g.noDraw):[])){const own=false;
       h+=`<div class="box"><div class="row" style="justify-content:space-between"><b>${lvTag(g.level)} קבוצה ${g.index+1}/${g.count}</b>${s.judges>1?`<select data-act="gjudge" data-id="${g.id}" aria-label="שופט">${Array.from({length:s.judges},(_,j)=>`<option value="${j}" ${g.judge===j?'selected':''}>שופט ${j+1}</option>`).join('')}</select>`:''}</div>
@@ -866,25 +878,46 @@ function renderKPIs(M){const s=state.settings,k=$('#kpis');if(!M||!M.tracks.leng
   if(!warns.length)warns.push(['ok','כל הבדיקות עברו']);
   const avgEx=M.tracks.reduce((a,t)=>a+Math.max(0,t.excess),0)/M.tracks.length;
   k.innerHTML=`<div class="kpi"><b>${M.tracks.length}</b><span>נבחנים</span></div><div class="kpi"><b>${fmt(M.firstLay)}</b><span>הנחה ראשונה</span></div><div class="kpi"><b>${fmt(firstDog)}</b><span>כלב ראשון</span></div><div class="kpi"><b>${fmt(M.lastEnd)}</b><span>סיום משוער</span></div><div class="kpi"><b>${dur(M.lastEnd-M.firstLay)}</b><span>משך כולל</span></div><div class="kpi"><b>${Math.round(avgEx)} דק׳</b><span>המתנה ממוצעת מעבר להשהייה</span></div><div class="warns">${warns.map(([c,t])=>`<span class="pill ${c}">${t}</span>`).join('')}</div>`;}
-function renderGantt(M){const el=$('#gantt');if(!M||!M.tracks.length){el.innerHTML='';return;}
+function renderGantt(M){const el=$('#gantt');if(!M||!M.tracks.length){el.innerHTML='';renderCtrl(M);return;}
+  const prev=el.querySelector('.g-scroll');const keep=prev?prev.scrollLeft:null;
   const z=state.ui.zoom,t0=Math.floor((Math.min(M.firstLay,...M.tracks.map(t=>(t.crossT||[{s:Infinity}])[0].s))-10)/30)*30,t1=Math.ceil((M.lastEnd+10)/30)*30;const W=(t1-t0)*z;const x=m=>(m-t0)*z;
   let ticks='';for(let m=t0;m<=t1;m+=30)ticks+=`<span class="tick" style="left:${x(m)}px">${fmt(m)}</span>`;
   let gl='';for(let m=t0;m<=t1;m+=30)gl+=`<span class="gl" style="left:${x(m)}px"></span>`;
   const nl=state.live&&M.NOW>t0&&M.NOW<t1?`<span class="nowline" style="left:${x(M.NOW)}px"></span>`:'';
-  let h=`<div class="g-axis"><div class="g-bars" style="width:${W}px">${ticks}</div><div class="g-lab">מסלול · נבחן</div></div>`;
-  for(const t of M.tracks.slice().sort((a,b)=>a.no-b.no)){const c=t.lv.color,a=t.act;
+  const rows=M.tracks.slice().sort((a,b)=>a.no-b.no);
+  let bars=`<div class="g-axis">${ticks}</div>`,labs=`<div class="g-axis g-lab">מסלול · רמה · נבחן</div>`;
+  for(const t of rows){const c=t.lv.color,a=t.act,sel=state.ui.sel===t.id?'sel':'';
     const xs=(t.crossT||[]).map(cc=>`<span class="xt" style="left:${x(cc.e)}px" title="עקבה חוצה ${rng(cc.s,cc.e)}"></span>`).join('');
-    h+=`<div class="g-row ${state.ui.sel===t.id?'sel':''}" data-act="sel" data-id="${t.id}"><div class="g-bars" style="width:${W}px">${gl}${nl}
+    bars+=`<div class="g-row ${sel}" data-act="sel" data-id="${t.id}">${gl}${nl}
       <span class="bar lay ${a.le!=null?'done':''}" style="left:${x(t.layStart)}px;width:${Math.max(2,(t.layEnd-t.layStart)*z)}px;background:${c}" title="הנחה ${rng(t.layStart,t.layEnd)}"></span>
-      <span class="bar age" style="left:${x(t.layEnd)}px;width:${Math.max(0,(t.start-t.layEnd)*z)}px;background:${c}" title="גיל ${Math.round(t.age)} דק׳ (מינימום ${t.aging})"></span>
-      <span class="bar jud ${a.je!=null?'done':''}" style="left:${x(t.start)}px;width:${Math.max(2,(t.end-t.start)*z)}px;background:color-mix(in srgb,${c} 55%,transparent)" title="עבודת הכלב ${rng(t.start,t.end)}"></span>${xs}</div>
-      <div class="g-lab"><span class="lv"><i style="background:${c}"></i>${t.no}</span> <span class="mono">${fmt(t.start)}</span> ${esc(t.comp?t.comp.dog:('מקום '+(t.slot+1)))}</div></div>`;}
-  el.innerHTML=h;}
+      <span class="bar age" style="left:${x(t.layEnd)}px;width:${Math.max(0,(t.start-t.layEnd)*z)}px;background:${c}" title="השהייה ${Math.round(t.age)} דק׳ (מינימום ${t.aging})"></span>
+      <span class="bar jud ${a.je!=null?'done':''}" style="left:${x(t.start)}px;width:${Math.max(2,(t.end-t.start)*z)}px;background:color-mix(in srgb,${c} 55%,transparent)" title="עבודת הכלב ${rng(t.start,t.end)}"></span>${xs}</div>`;
+    const who=t.comp?`${esc(t.comp.handler)} · ${esc(t.comp.dog)}`:(t.group.noDraw?'':'טרם הוגרל');
+    labs+=`<div class="g-row g-lab ${sel}" data-act="sel" data-id="${t.id}"><span class="lv"><i style="background:${c}"></i>${t.no}</span><b>${t.lv.short}</b><span class="who">${who}</span></div>`;}
+  el.innerHTML=`<div class="g-scroll"><div class="g-inner" style="width:${W}px">${bars}</div></div><div class="g-labels">${labs}</div>`;
+  const sc=el.querySelector('.g-scroll');const focus=state.live&&isFinite(M.NOW)?M.NOW:M.firstLay;
+  sc.scrollLeft=keep!=null?keep:Math.max(0,x(focus)-60);
+  renderCtrl(M);}
+/* control panel for one track: planned times next to the actual ones, with "now" buttons and editable times */
+function renderCtrl(M){const el=$('#ctrl');const t=M&&M.tracks.find(x=>x.id===state.ui.sel);if(!t){el.hidden=true;el.innerHTML='';return;}
+  const a=t.act,id=t.id,pin=(state.pins||{})[id];
+  const cell=(k,label)=>`<div class="act"><span class="lbl">${label}</span><input type="time" data-actual="${k}" data-id="${id}" value="${a[k]!=null?hmStr(a[k]):''}" aria-label="${label}"><button class="btn sm" data-act="now" data-k="${k}" data-id="${id}" type="button">עכשיו</button>${a[k]!=null?`<button class="btn sm ghost" data-act="unmark" data-k="${k}" data-id="${id}" type="button" aria-label="נקה">✕</button>`:''}</div>`;
+  const ct=(t.crossT||[])[0];const who=t.comp?`${esc(t.comp.handler)} עם ${esc(t.comp.dog)}`:(t.group.noDraw?'':'טרם הוגרל');
+  const ageNow=a.le!=null&&state.live&&isFinite(M.NOW)?Math.round(M.NOW-a.le):null;
+  let h=`<div class="hd"><b>מסלול ${t.no} · ${t.lv.short}${who?' · '+who:''}</b><div class="row"><span class="note">${resName(t)}</span><button class="btn sm" data-act="sel" data-id="${id}" type="button">סגור</button></div></div>
+  <div class="tw"><table><thead><tr><th>שלב</th><th>מתוכנן</th><th>בפועל</th></tr></thead><tbody>
+  <tr><td>הנחת המסלול</td><td class="num">${rng(t.layStart,t.layEnd)}</td><td><div class="act">${cell('ls','התחלה')}${cell('le','סיום')}</div></td></tr>`;
+  if(t.lv.cross)h+=`<tr><td>עקבה חוצה</td><td class="num">${ct?rng(ct.s,ct.e):'—'}</td><td>${cell('cs','הונחה')}</td></tr>`;
+  h+=`<tr><td>יציאת הכלב</td><td class="num">${fmt(t.start)}</td><td><div class="act">${cell('js','יצא')}${cell('je','סיים')}</div></td></tr>
+  </tbody></table></div>
+  <div class="row"><span class="lbl">גיל המסלול ביציאה: <b class="mono">${Math.round(t.age)}</b> דק׳ (מינימום ${t.aging})${ageNow!=null?` · גיל עכשיו ${ageNow} דק׳`:''}</span></div>
+  <div class="act"><span class="lbl">הכלב יעלה לא לפני</span><input type="time" data-pin="${id}" value="${pin!=null?hmStr(pin):''}" aria-label="הכלב יעלה לא לפני"><button class="btn sm" data-act="pin-shift" data-v="5" data-id="${id}" type="button">+5 דק׳</button><button class="btn sm" data-act="pin-shift" data-v="15" data-id="${id}" type="button">+15 דק׳</button>${pin!=null?`<button class="btn sm ghost" data-act="pin-clear" data-id="${id}" type="button">בטל</button>`:''}</div>
+  <p class="note">שעה שנרשמה בפועל נועלת את השלב, והלו״ז של כל השאר מתעדכן לפיה. "לא לפני" דוחה את הכלב הזה, ומי שאחריו זז בהתאם.${a.ls!=null&&a.ls<t.layDur&&!state.live?'':''}</p>`;
+  if(t.lv.cross&&a.cs==null&&a.js!=null)h+=`<p class="warn">הכלב יצא לפני שנרשמה הנחת העקבה החוצה.</p>`;
+  if(a.js!=null&&a.le!=null&&a.js-a.le<t.aging-0.5)h+=`<p class="warn">הכלב יצא כשהמסלול בן ${Math.round(a.js-a.le)} דק׳, פחות מההשהייה המינימלית (${t.aging} דק׳).</p>`;
+  el.innerHTML=h;el.hidden=false;}
+const hmStr=m=>{const r=Math.round(m);const x=((r%1440)+1440)%1440;return pad(Math.floor(x/60))+':'+pad(x%60);};
 
-function regen(){if(state.live){toast('במצב חי המסלולים לא מוצבים מחדש אוטומטית. לחצו "צור מסלולים מחדש" אם צריך.');recompute();return;}
-  if(!hasField()){recompute();return;}
-  const bz=document.createElement('div');bz.className='busy';bz.textContent='מציב מסלולים בשטח…';document.body.appendChild(bz);
-  setTimeout(()=>{try{generateTracks();}finally{bz.remove();}recompute();},30);}
 let toastT=null;function toast(msg){mapNote(msg);clearTimeout(toastT);toastT=setTimeout(()=>{if(!tileFailed)mapNote(null);},7000);}
 function recompute(){
   const M=buildModel();if(M.tracks.length){schedule(M);try{computeRoutes(M);}catch(e){console.error(e);}}else{M.NOW=nowMin();}
@@ -951,12 +984,16 @@ document.addEventListener('click',async e=>{const el=e.target.closest('[data-act
     case 'live':state.live=!state.live;save();recompute();if(state.live){state.ui.tab='live';renderTabs();renderPanel();}break;
     case 'mark':{const inp=document.getElementById('tm-'+el.dataset.key);const tm=inp&&inp.value?hm(inp.value):Math.round(nowMin()*10)/10;const t=lastM.tracks.find(x=>x.id===id);const ac=state.actuals[id]=state.actuals[id]||{};
       if(el.dataset.k==='ls')ac.res=t.res;ac[el.dataset.k]=tm;if(el.dataset.k==='le'&&ac.ls==null)ac.ls=tm-t.layDur;save();recompute();break;}
+    case 'now':{const t=lastM.tracks.find(x=>x.id===id);const ac=state.actuals[id]=state.actuals[id]||{};const k=el.dataset.k;const tm=Math.round(nowMin()*10)/10;
+      if(k==='ls')ac.res=t.res;ac[k]=tm;if(k==='le'&&ac.ls==null){ac.ls=tm-t.layDur;ac.res=t.res;}if(k==='je'&&ac.js==null)ac.js=tm-t.est;save();recompute();break;}
+    case 'pin-shift':{state.pins=state.pins||{};const t=lastM.tracks.find(x=>x.id===id);state.pins[id]=Math.round((state.pins[id]!=null?Math.max(state.pins[id],t.start):t.start)+(+el.dataset.v));save();recompute();break;}
+    case 'pin-clear':if(state.pins)delete state.pins[id];save();recompute();break;
     case 'unmark':{const ac=state.actuals[id];if(ac){delete ac[el.dataset.k];if(el.dataset.k==='ls'){delete ac.le;delete ac.res;}}save();recompute();break;}
     case 'reset-actuals':state.actuals={};save();recompute();break;
     case 'ord':{const i=+el.dataset.v,d=+el.dataset.d,o=s.levelOrder;[o[i],o[i+d]]=[o[i+d],o[i]];s.autoOrder=false;save();regen();break;}
     case 'autoorder':s.autoOrder=el.checked;save();if(s.autoOrder){save();regen();}else renderPanel();break;
     case 'export':copy(JSON.stringify(state));break;
-    case 'import':{try{const v=JSON.parse($('#io').value);if(!v.settings)throw 0;state=v;const d=defaultState();state.ui=Object.assign(d.ui,state.ui||{});['draws','geo','trackNo','actuals','judgeOverride'].forEach(k=>state[k]=state[k]||{});save();initMap();recompute();toast('הגיבוי נטען.');}catch(err){toast('הטקסט בתיבה אינו גיבוי תקין של המערכת.');}break;}
+    case 'import':{try{const v=JSON.parse($('#io').value);if(!v.settings)throw 0;state=v;const d=defaultState();state.ui=Object.assign(d.ui,state.ui||{});['draws','geo','trackNo','actuals','judgeOverride','pins'].forEach(k=>state[k]=state[k]||{});save();initMap();recompute();toast('הגיבוי נטען.');}catch(err){toast('הטקסט בתיבה אינו גיבוי תקין של המערכת.');}break;}
     case 'reset':if(el.dataset.armed){state=defaultState();save();initMap();generateTracks();recompute();}else{el.dataset.armed='1';el.textContent='לחצו שוב לאישור';setTimeout(()=>{if(el.isConnected){delete el.dataset.armed;el.textContent='התחל מאפס';}},4000);}break;
   }
 });
@@ -980,6 +1017,11 @@ document.addEventListener('change',e=>{const el=e.target;const s=state.settings;
   if(el.dataset.aging){s.aging[el.dataset.aging]=Math.max(LEVELS[el.dataset.aging].aging,+el.value||0);save();regen();return;}
   if(el.dataset.est){s.est[el.dataset.est]=Math.min(LEVELS[el.dataset.est].work,Math.max(3,+el.value||3));save();regen();return;}
   if(el.dataset.act==='comp-level'){const c=state.competitors.find(x=>x.id===el.dataset.id);if(c)c.level=el.value;save();regen();return;}
+  if(el.dataset.actual){const id=el.dataset.id,k=el.dataset.actual;const t=lastM.tracks.find(x=>x.id===id);const ac=state.actuals[id]=state.actuals[id]||{};
+    if(!el.value){delete ac[k];if(k==='ls'){delete ac.le;delete ac.res;}}else{let v=hm(el.value);const ref=k==='ls'||k==='le'?t.layStart:k==='cs'?((t.crossT||[])[0]||{s:t.start}).s:t.start;while(v<ref-720)v+=1440;
+      if(k==='ls')ac.res=t.res;ac[k]=v;if(k==='le'&&ac.ls==null){ac.ls=v-t.layDur;ac.res=t.res;}if(k==='je'&&ac.js==null)ac.js=v-t.est;}
+    save();recompute();return;}
+  if(el.dataset.pin){state.pins=state.pins||{};const id=el.dataset.pin;if(!el.value)delete state.pins[id];else{const t=lastM.tracks.find(x=>x.id===id);let v=hm(el.value);while(v<t.layStart-720)v+=1440;state.pins[id]=v;}save();recompute();return;}
   if(el.dataset.act==='gjudge'){state.judgeOverride[el.dataset.id]=+el.value;save();recompute();return;}
   if(el.id==='img-in'&&el.files[0]){const fr=new FileReader();fr.onload=()=>{const im=new Image();im.onload=()=>{state.map.image={url:fr.result,w:im.naturalWidth,h:im.naturalHeight,scale:1};imgVolatile=fr.result;state.map.fields=[];state.map.paths=[];state.map.base=[im.naturalWidth*0.05,im.naturalHeight*0.05];state.geo={};save();initMap();recompute();toast('התמונה נטענה. עכשיו כיילו קנה מידה: "כיול קנה מידה" ושתי נקודות עם מרחק ידוע.');};im.src=fr.result;};fr.readAsDataURL(el.files[0]);}
 });
