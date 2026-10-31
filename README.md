@@ -2,7 +2,9 @@
 
 A single-page web tool for planning and running FCI-IGP tracking trials and championships: FPr 1–3 (tracking phase of IGP 1–3) and FH 1–3 (FCI-IFH 1–3). The interface is in Hebrew.
 
-Open `index.html` in a browser, or serve the folder with GitHub Pages. No build step and no server: everything runs in the browser and is saved in the browser's local storage.
+Live: https://yakir91.github.io/tracking-management-tool/
+
+Open `index.html` in a browser, or use the live site above. No build step and no server: everything runs in the browser and is saved in the browser's local storage. A trial can be shared as a link from the Share tab.
 
 ## What it does
 
