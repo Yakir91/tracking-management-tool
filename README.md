@@ -23,7 +23,7 @@ Open `index.html` in a browser, or serve the folder with GitHub Pages. No build 
   - Place search and current location.
   - An uploaded aerial image calibrated to scale, or a schematic grid.
 - **Field layout:**
-  - Mark the tracking field and the access path.
+  - Mark one or more tracking fields and one or more access paths. Tracks fill the fields in the order they were marked; a field with no marked path gets automatic paths. The tool reports each field's size and whether the entries fit.
   - Tracks are placed side by side along the path, in working order. Each track starts from the path and exits back toward it.
   - At least 22 m separate any two tracks, including the exit of one track and the start of the next.
 - **Just-in-time laying:**
