@@ -501,6 +501,11 @@ function Share() {
         <>
           <textarea ref={ta} readOnly aria-label="קישור השיתוף" value={url} />
           <Note>אורך הקישור: {url.length.toLocaleString('he-IL')} תווים.</Note>
+          {url.includes('#s=') && (
+            <Note style={{ color: 'var(--warn)' }}>
+              הקישור ארוך כי הוא כולל את צורת כל המסלולים: הם הוצבו בגרסה קודמת של המערכת או שונו אחרי ההצבה. כדי לקבל קישור קצר, לחצו "צור מסלולים מחדש" בלשונית "שטח ומפה" (המסלולים יוצבו מחדש) וצרו קישור שוב.
+            </Note>
+          )}
         </>
       )}
     </div>

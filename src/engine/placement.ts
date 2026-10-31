@@ -5,6 +5,7 @@ import { LEVELS } from './levels';
 import { buildModel } from './model';
 import { schedule } from './schedule';
 import { footprint, laneShape, shapeSegs, toWorld } from './shapes';
+import { rand, seeded, withRandom } from './util';
 import type { FitReport, LevelKey, Pt, Track, TrackGeo, TrialState } from './types';
 
 /** Cost of a judging order: total trial length plus a quarter of the waiting beyond minimum aging. */
@@ -52,7 +53,14 @@ export interface GenResult { ok: boolean; message?: string }
  * Places every track in the marked fields, side by side along the access paths in working order.
  * Mutates st: geo, trackNo, actuals (cleared), lastGen (fit report) and, with auto order, settings.levelOrder.
  */
-export function generateTracks(st: TrialState): GenResult {
+export function generateTracks(st: TrialState, seed?: number): GenResult {
+  // a recorded seed makes the layout reproducible, so a share link can carry the seed instead of every track
+  const sd = seed ?? Math.floor(rand() * 2 ** 31);
+  st.genSeed = sd;
+  return withRandom(seeded(sd), () => generateBest(st));
+}
+
+function generateBest(st: TrialState): GenResult {
   // shapes are random: when something is left out, try again a couple of times and keep the best layout
   let r = generateOnce(st);
   if (!r.ok || !st.lastGen || !st.lastGen.fails) return r;

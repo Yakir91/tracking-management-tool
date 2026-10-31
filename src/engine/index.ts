@@ -29,6 +29,6 @@ export { fieldsOf, hasField, allFieldPts, totalArea, getPaths, pathField } from 
 export { trackCard, crossCard, compName, resName } from './cards';
 export { events, liveEvents, warnings } from './reports';
 export { defaultState, normalize, loadState, saveState, demoLayout, STORE_KEY } from './state';
-export { packShare, unpackShare, stateFromShare } from './share';
+export { packShare, unpackShare, stateFromShare, shareSummary, isShareHash } from './share';
 export { groupSizeFor } from './model';
 export * from './util';

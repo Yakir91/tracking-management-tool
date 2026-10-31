@@ -4,6 +4,22 @@ export const setRandom = (fn: () => number) => {
   random = fn;
 };
 export const rand = () => random();
+/** Run body with a different random source, then put the previous one back. */
+export function withRandom<T>(fn: () => number, body: () => T): T {
+  const prev = random;
+  random = fn;
+  try {
+    return body();
+  } finally {
+    random = prev;
+  }
+}
+/** Small stable string hash (FNV-1a), for seeding. */
+export function hashStr(str: string) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
 export const rnd = (a: number, b: number) => a + random() * (b - a);
 
 /** Small seeded generator (mulberry32) for tests. */

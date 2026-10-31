@@ -1,9 +1,9 @@
 import {
-  allFieldPts, compName, defaultState, events, fmt, generateTracks, getPaths, hasField, hm, LEVELS, loadState, nowMin, normalize,
+  allFieldPts, compName, isShareHash, defaultState, events, fmt, generateTracks, getPaths, hasField, hm, LEVELS, loadState, nowMin, normalize,
   packShare, pathField, plan, saveState, shuffle, stateFromShare, todayISO, trackCard, uid, unpackShare,
 } from '../engine';
 import { dist } from '../engine/geometry';
-import type { SharePayload } from '../engine/share';
+import type { AnyPayload } from '../engine/share';
 import type { Actual, LevelKey, MapMode, Model, Pt, Settings, TrialState } from '../engine/types';
 import { fromLL, toLL, type LatLng } from './coords';
 
@@ -19,7 +19,7 @@ export interface Transient {
   note: string | null;
   busy: string | null;
   shareUrl: string;
-  incoming: SharePayload | null;
+  incoming: AnyPayload | null;
   saveNote: string;
   /** Bumped to ask the map to fit the field / rebuild / move. */
   fitReq: number;
@@ -652,8 +652,7 @@ export class Store {
   // ---- sharing ----
   async makeShare() {
     try {
-      const code = await packShare(this.st);
-      this.tx.shareUrl = location.origin + location.pathname + '#s=' + code;
+      this.tx.shareUrl = location.origin + location.pathname + (await packShare(this.st));
       this.emit();
     } catch {
       this.toast('לא הצלחתי ליצור קישור בדפדפן הזה.');
@@ -661,9 +660,9 @@ export class Store {
   }
   async checkIncoming() {
     const h = location.hash || '';
-    if (!h.startsWith('#s=')) return;
+    if (!isShareHash(h)) return;
     try {
-      this.tx.incoming = await unpackShare(h.slice(3));
+      this.tx.incoming = await unpackShare(h);
     } catch {
       this.tx.incoming = null;
       this.toast('קישור השיתוף פגום או נחתך באמצע. בקשו קישור חדש.');
@@ -680,7 +679,13 @@ export class Store {
   }
   acceptShare() {
     if (!this.tx.incoming) return;
-    this.st = stateFromShare(this.tx.incoming);
+    try {
+      this.st = stateFromShare(this.tx.incoming);
+    } catch (e) {
+      console.error(e);
+      this.toast('לא הצלחתי לפתוח את המבחן המשותף. בקשו קישור חדש.');
+      return;
+    }
     this.tx.incoming = null;
     this.clearHash();
     this.tx.mapKey++;

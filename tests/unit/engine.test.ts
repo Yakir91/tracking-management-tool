@@ -189,13 +189,31 @@ describe('fields, groups, sharing', () => {
     expect((st.map as unknown as Record<string, unknown>).field).toBeUndefined();
   });
 
-  it('round-trips a trial through a share link with the same schedule', async () => {
+  it('round-trips a trial through a short share link with the same layout and schedule', async () => {
     const { st, M } = demo(5);
-    const code = await packShare(st);
-    expect(code.length).toBeLessThan(12000);
-    const st2 = stateFromShare(await unpackShare(code));
-    const M2 = plan(st2, NOW, false);
-    const sig = (m: Model) => m.tracks.map((t) => `${t.no}:${Math.round(t.start)}:${t.geo ? t.geo.pts.length : 0}`).join(',');
-    expect(sig(M2)).toBe(sig(M));
+    const draw = M.groups.find((g) => !g.noDraw)!;
+    st.draws[draw.id] = { sig: draw.sig, order: draw.members.slice().reverse(), at: 1 };
+    const t1 = M.tracks[0];
+    st.actuals[t1.id] = { ls: t1.layStart, res: t1.res };
+    const hash = await packShare(st);
+    expect(hash.startsWith('#t=')).toBe(true);
+    expect(hash.length).toBeLessThan(2000);
+    const st2 = stateFromShare(await unpackShare(hash + ' '));
+    const sig = (s: TrialState) => {
+      const m = plan(s, NOW, false);
+      return m.tracks.map((t) => `${t.no}:${t.comp?.id}:${Math.round(t.start)}:${t.geo ? t.geo.pts.map((p) => p.map(Math.round).join(',')).join(';') : ''}`).join('|');
+    };
+    expect(sig(st2)).toBe(sig(st));
+    expect(st2.actuals[t1.id].ls).toBeCloseTo(t1.layStart);
+  });
+
+  it('falls back to the full link when the layout does not come from the seed', async () => {
+    const { st } = demo(6);
+    const k = Object.keys(st.geo)[0];
+    st.geo[k] = { ...st.geo[k], pts: st.geo[k].pts.map(([x, y]) => [x + 5, y] as [number, number]) };
+    const hash = await packShare(st);
+    expect(hash.startsWith('#s=')).toBe(true);
+    const st2 = stateFromShare(await unpackShare(hash));
+    expect(st2.geo[k].pts[0][0]).toBeCloseTo(st.geo[k].pts[0][0], 0);
   });
 });

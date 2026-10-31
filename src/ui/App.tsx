@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { dur, fmt, pad, warnings } from '../engine';
+import { dur, fmt, pad, shareSummary, warnings } from '../engine';
 import { store } from '../state/store';
 import { useStore } from './common';
 import { MapView } from './MapView';
@@ -85,12 +85,12 @@ function StartInput({ value }: { value: string }) {
 
 function ShareBanner() {
   const { tx } = useStore();
-  const inc = tx.incoming!;
-  const nF = (inc.map?.fields || []).length, nC = (inc.competitors || []).length;
-  const when = new Date(inc.at).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const sum = shareSummary(tx.incoming!);
+  const nF = sum.fields, nC = sum.competitors;
+  const when = new Date(sum.at).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
   return (
     <section className="share-in" data-testid="share-banner">
-      <span>התקבל מבחן משותף: {nC} נבחנים, {nF} {nF === 1 ? 'שטח' : 'שטחים'}, תאריך המבחן {inc.settings?.date}. נוצר ב-{when}.</span>
+      <span>התקבל מבחן משותף: {nC} נבחנים, {nF} {nF === 1 ? 'שטח' : 'שטחים'}, תאריך המבחן {sum.date}. נוצר ב-{when}.</span>
       <span className="row">
         <button className="btn pri" type="button" onClick={() => store.acceptShare()}>פתח את המבחן המשותף</button>
         <button className="btn" type="button" onClick={() => store.rejectShare()}>השאר את שלי</button>

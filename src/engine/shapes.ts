@@ -1,7 +1,7 @@
 import { D, segSeg } from './geometry';
 import { LEVELS } from './levels';
 import type { Article, Level, LevelKey, Pt, Settings, TrackGeo } from './types';
-import { rnd, rand } from './util';
+import { hashStr, rnd, rand, seeded, withRandom } from './util';
 
 /** A leg in the lane frame: headings 0 = into the field, 90 = along the path, 180 = back toward the path. */
 interface LaneLeg { type: 'line' | 'semi'; paces: number; hIn: number; hOut: number; start: number }
@@ -251,6 +251,11 @@ const fpCache: Record<string, { w: number; d: number; dMin: number }> = {};
 export function footprint(lk: LevelKey, s: Settings) {
   const key = lk + '|' + [s.pace, s.intraSep, s.semiR, s.setback].join(',');
   if (fpCache[key]) return fpCache[key];
+  // own fixed random source: a warm or cold cache must not change the random sequence of track placement
+  return (fpCache[key] = withRandom(seeded(hashStr(key)), () => measureFootprint(lk, s)));
+}
+
+function measureFootprint(lk: LevelKey, s: Settings) {
   const lv = LEVELS[lk];
   let w = 0, d = 0, n = 0, dMin = Infinity;
   for (let i = 0; i < 14; i++) {
@@ -265,5 +270,5 @@ export function footprint(lk: LevelKey, s: Settings) {
     if (!sh) continue;
     dMin = Math.min(dMin, Math.max(...sh.pts.map((q) => q[1])));
   }
-  return (fpCache[key] = { w: n ? w / n : 100, d: n ? d / n : 150, dMin: isFinite(dMin) ? dMin : n ? d / n : 150 });
+  return { w: n ? w / n : 100, d: n ? d / n : 150, dMin: isFinite(dMin) ? dMin : n ? d / n : 150 };
 }

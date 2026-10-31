@@ -96,13 +96,14 @@ test('share link opens the same trial on another device', async ({ page, browser
   await tab(page, 'שיתוף');
   await page.getByRole('button', { name: 'צור קישור' }).click();
   const url = await page.getByLabel('קישור השיתוף').inputValue();
-  expect(url).toContain('#s=');
+  expect(url).toContain('#t=');
+  expect(url.length).toBeLessThan(2500);
   const other = await browser.newPage();
   await other.goto(url);
   await expect(other.getByTestId('share-banner')).toContainText('15 נבחנים');
   await other.getByRole('button', { name: 'פתח את המבחן המשותף' }).click();
   await expect(other.locator('.m-flag')).toHaveCount(15);
-  expect(other.url()).not.toContain('#s=');
+  expect(other.url()).not.toContain('#t=');
   await other.close();
 });
 

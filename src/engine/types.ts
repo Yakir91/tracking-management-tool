@@ -185,6 +185,8 @@ export interface TrialState {
   pins: Record<string, number>;
   live: boolean;
   lastGen: FitReport | null;
+  /** Seed of the last track placement (reproduces st.geo). */
+  genSeed?: number;
   ui: UiState;
 }
 
