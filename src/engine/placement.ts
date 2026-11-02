@@ -49,6 +49,9 @@ export function optimizeOrder(st: TrialState) {
 
 export interface GenResult { ok: boolean; message?: string }
 
+/** Bump whenever placement changes how a seed turns into tracks: short links made before then show a new layout. */
+export const PLACEMENT_VERSION = 2;
+
 /**
  * Places every track in the marked fields, side by side along the access paths in working order.
  * Mutates st: geo, trackNo, actuals (cleared), lastGen (fit report) and, with auto order, settings.levelOrder.
@@ -60,12 +63,36 @@ export function generateTracks(st: TrialState, seed?: number): GenResult {
   return withRandom(seeded(sd), () => generateBest(st));
 }
 
+/** What the layout depends on: fields, paths, entrants and the settings that shape or order tracks. */
+function layoutSig(st: TrialState) {
+  const s = st.settings, m = st.map;
+  return JSON.stringify([m.fields, m.paths, m.base, st.competitors.map((c) => [c.id, c.level]), s.levelOrder, s.autoOrder, s.groupSize,
+    s.pace, s.sep, s.intraSep, s.edge, s.setback, s.semiR, s.crossExt, s.crossClear, s.walkBuf, s.layers, s.judges, s.aging, s.est]);
+}
+const placedCount = (st: TrialState) => Object.keys(st.geo).length;
+
 function generateBest(st: TrialState): GenResult {
-  // shapes are random: when something is left out, try again a couple of times and keep the best layout
+  // the current layout, if it was made for exactly these inputs: a new attempt must not place fewer tracks
+  const sig = layoutSig(st);
+  const prev = st.lastGen && st.lastGen.sig === sig && placedCount(st) ? { geo: st.geo, trackNo: st.trackNo, lastGen: st.lastGen, seed: st.lastGen.seed, n: placedCount(st) } : null;
+  const r = generateTries(st);
+  if (st.lastGen) { st.lastGen.sig = layoutSig(st); st.lastGen.seed = st.genSeed; }
+  if (prev && prev.n > placedCount(st)) {
+    st.geo = prev.geo;
+    st.trackNo = prev.trackNo;
+    st.lastGen = prev.lastGen;
+    st.genSeed = prev.seed;
+    return { ok: true, message: 'הניסיון החדש הכניס פחות מסלולים, ולכן נשארה הפריסה הקודמת.' };
+  }
+  return r;
+}
+
+function generateTries(st: TrialState): GenResult {
+  // shapes are random: when something is left out, try again a few times and keep the best layout
   let r = generateOnce(st);
   if (!r.ok || !st.lastGen || !st.lastGen.fails) return r;
   let best = { r, geo: st.geo, trackNo: st.trackNo, lastGen: st.lastGen };
-  for (let k = 0; k < 2 && best.lastGen.fails; k++) {
+  for (let k = 0; k < 3 && best.lastGen.fails; k++) {
     r = generateOnce(st);
     if (st.lastGen && st.lastGen.fails < best.lastGen.fails) best = { r, geo: st.geo, trackNo: st.trackNo, lastGen: st.lastGen };
   }
@@ -126,7 +153,7 @@ function generateOnce(st: TrialState): GenResult {
   }
   if (!slots.length) return { ok: false, message: 'שביל הגישה לא נמצא לצד שטח המסלולים. סמנו שביל לאורך השטח.' };
   const obs: Obstacle[] = [];
-  let fails = 0, si = 0, cur = s.edge + 5;
+  let fails = 0;
   const rayDepth = (p0: Pt, N: Pt, field: Pt[]) => {
     let d = 0;
     for (; d < 3000; d += 5) if (!inPoly([p0[0] + N[0] * (d + 5), p0[1] + N[1] * (d + 5)], field)) break;
@@ -146,7 +173,7 @@ function generateOnce(st: TrialState): GenResult {
       if (failCache.has(key)) continue;
       // collect a few valid shapes and use the narrowest, so long tracks don't eat the frontage the next ones need
       const cands: TrackGeo[] = [];
-      for (let a = 0; a < 12 && cands.length < 4; a++) {
+      for (let a = 0; a < 24 && cands.length < 6; a++) {
         const sh = laneShape(lv, s, dmax, lm, 500);
         if (!sh) { if (!cands.length) failCache.add(key); break; }
         const w = toWorld(sh, q.p, T, N);
@@ -171,25 +198,38 @@ function generateOnce(st: TrialState): GenResult {
     }
     return null;
   }
-  order.forEach((t, i) => {
-    st.trackNo[t.id] = i + 1;
-    let placed: TrackGeo | null = null, psi = si, pc = cur;
-    while (!placed && psi < slots.length) {
-      placed = tryAt(t, slots[psi], pc);
-      if (!placed) {
-        pc += 10;
-        if (pc > slots[psi].PL - 20) { psi++; pc = s.edge + 5; }
+  order.forEach((t, i) => (st.trackNo[t.id] = i + 1));
+  // biggest tracks first, so the long ones get the deep, open parts of the field; numbering stays in working order
+  const placeOrder = order.slice().sort((a, b) => b.lv.paces - a.lv.paces || st.trackNo[a.id] - st.trackNo[b.id]);
+  // stretches of each slot already taken, as [from, to] along the slot (including the gap to the next track)
+  const used: [number, number][][] = slots.map(() => []);
+  const taken = (k: number, at: number) => used[k].some(([a, b]) => at > a - 5 && at < b);
+  // room before the next taken stretch (or the end of the path)
+  const room = (k: number, at: number) => Math.min(slots[k].PL - at, ...used[k].filter(([a]) => a >= at).map(([a]) => a - at));
+  for (const t of placeOrder) {
+    const fp = footprint(t.level, s);
+    const goodW = fp.w * 1.3, minW = fp.w * 0.55;
+    let best: { g: TrackGeo; k: number; at: number } | null = null;
+    // first fit that is compact; otherwise the narrowest fit found anywhere
+    scan: for (let k = 0; k < slots.length; k++) {
+      for (let at = s.edge + 5; at <= slots[k].PL - 20; at += 10) {
+        if (taken(k, at) || room(k, at) < minW) continue;
+        const g = tryAt(t, slots[k], at);
+        if (!g) continue;
+        if (!best || g.maxU < best.g.maxU) best = { g, k, at };
+        if (g.maxU <= goodW) break scan;
+        at += 20;
       }
     }
-    if (placed) {
-      si = psi;
-      cur = pc + placed.maxU + s.sep;
+    if (best) {
+      const { g: placed, k, at } = best;
+      used[k].push([at, at + placed.maxU + s.sep]);
       placed.level = t.level;
       st.geo[t.id] = placed;
       obs.push({ kind: 'track', segs: shapeSegs(placed).map((g) => [g[0], g[1]] as Seg), bb: bboxOf(placed.pts.concat(placed.tail)) });
       placed.cross.forEach((c) => obs.push({ kind: 'cross', segs: [[c.a, c.b]], bb: bboxOf([c.a, c.b]) }));
     } else fails++;
-  });
+  }
   // fit report: what fits, what is missing, and how much more frontage or depth would be needed
   const byLevel: FitReport['byLevel'] = {};
   const widths: Partial<Record<LevelKey, number[]>> = {};

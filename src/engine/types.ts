@@ -163,6 +163,9 @@ export interface FitReport {
   depth: number;
   area: number;
   fields: number;
+  /** Inputs the layout was made for, and the seed that made it (to keep a better earlier layout). */
+  sig?: string;
+  seed?: number;
 }
 
 export interface UiState {

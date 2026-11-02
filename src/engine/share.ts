@@ -1,5 +1,5 @@
 import { hasField } from './field';
-import { generateTracks } from './placement';
+import { generateTracks, PLACEMENT_VERSION } from './placement';
 import { defaultState, normalize } from './state';
 import type { Actual, Competitor, Draw, LevelKey, MapMode, Pt, Settings, TrackGeo, TrialState } from './types';
 
@@ -29,6 +29,8 @@ export interface CompactPayload {
   j?: Record<string, number>;
   l?: 1;
   g: number;
+  /** Placement version the seed belongs to. */
+  pv?: number;
 }
 
 export type AnyPayload = SharePayload | CompactPayload;
@@ -59,7 +61,7 @@ export function compactBody(st: TrialState): CompactPayload {
     // exact coordinates: even centimetre rounding can change which shapes fit, and the layout must come out the same
     m: { mode: m.mode === 'image' ? 'schematic' : m.mode, f: m.fields || [], p: m.paths || [], b: m.base, o: m.origin, ce: m.center },
     d: nonEmpty(st.draws), a: nonEmpty(st.actuals), pi: nonEmpty(st.pins || {}), j: nonEmpty(st.judgeOverride),
-    l: st.live ? 1 : undefined, g: st.genSeed ?? 0,
+    l: st.live ? 1 : undefined, g: st.genSeed ?? 0, pv: PLACEMENT_VERSION,
   };
 }
 
@@ -134,8 +136,8 @@ export const isShareHash = (hash: string) => /^#?[st]=/.test(hash);
 
 /** What the banner says about an incoming trial. */
 export function shareSummary(p: AnyPayload) {
-  if (p.v === 2) return { competitors: p.c.length, fields: p.m.f.length, date: p.s.date || '', at: p.at * 1000 };
-  return { competitors: (p.competitors || []).length, fields: (p.map?.fields || []).length, date: p.settings?.date || '', at: p.at };
+  if (p.v === 2) return { competitors: p.c.length, fields: p.m.f.length, date: p.s.date || '', at: p.at * 1000, layoutMayDiffer: (p.pv || 1) !== PLACEMENT_VERSION };
+  return { competitors: (p.competitors || []).length, fields: (p.map?.fields || []).length, date: p.settings?.date || '', at: p.at, layoutMayDiffer: false };
 }
 
 /** A shared trial as a full local state; the person's own view settings are reset. */

@@ -91,6 +91,7 @@ function ShareBanner() {
   return (
     <section className="share-in" data-testid="share-banner">
       <span>התקבל מבחן משותף: {nC} נבחנים, {nF} {nF === 1 ? 'שטח' : 'שטחים'}, תאריך המבחן {sum.date}. נוצר ב-{when}.</span>
+      {sum.layoutMayDiffer && <span className="note">הקישור נוצר בגרסה קודמת של המערכת: השטחים, הנבחנים והזמנים זהים, אבל המסלולים יוצבו מחדש ועשויים להיראות אחרת.</span>}
       <span className="row">
         <button className="btn pri" type="button" onClick={() => store.acceptShare()}>פתח את המבחן המשותף</button>
         <button className="btn" type="button" onClick={() => store.rejectShare()}>השאר את שלי</button>

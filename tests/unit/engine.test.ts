@@ -171,6 +171,23 @@ describe('fields, groups, sharing', () => {
     }
   });
 
+  it('placing again never places fewer tracks than the current layout', () => {
+    setRandom(seeded(11));
+    const st = defaultState();
+    st.map.fields = [[[0, 0], [700, 0], [700, 420], [0, 420]]];
+    st.map.paths = [];
+    generateTracks(st);
+    let best = Object.keys(st.geo).length;
+    expect(best).toBeGreaterThan(0);
+    for (let k = 0; k < 4; k++) {
+      generateTracks(st);
+      const n = Object.keys(st.geo).length;
+      expect(n).toBeGreaterThanOrEqual(best);
+      best = n;
+      expect(st.lastGen!.fails).toBe(15 - n);
+    }
+  });
+
   it('chooses group size 3 for short aging and one group for own-laid levels', () => {
     const st = defaultState();
     expect(groupSizeFor(st, 'FPR3')).toBe(3);
